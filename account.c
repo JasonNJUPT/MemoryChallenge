@@ -1,28 +1,27 @@
-/*========================================================================
- * 文件名：account.c
- * 功  能：账号模块的实现。负责密码安全检测、用户注册和用户登录，
- *         账号数据保存在文本文件 users.txt 中，一行一个账号。
- * 说  明：账号用结构体数组保存，不使用链表，只使用标准 C 库。
- *========================================================================*/
+#include <stdlib.h>  // exit
+// 账号注册、登录和文件保存，users.txt 每行存一个用户名和密码
 #include <errno.h>      /* 区分首次运行无文件与读取错误 */
 #include <stdio.h>      /* printf、fopen、fprintf 等输入输出函数 */
 #include <string.h>     /* strcmp、strlen 等字符串函数           */
 #include <ctype.h>      /* islower、isupper、isdigit 字符判断    */
 #include "account.h"    /* 本模块的结构体与函数声明              */
 
-#define USERS_FILE "users.txt"   /* 账号文件的文件名，与 main.c 在同一目录 */
+#define USER_MAX     100      /* 一次最多读入内存的账号个数                  */
+
+#define USERS_FILE "users.txt"   /* 账号文件保存在程序运行时的工作目录 */
 
 /* 以下是本文件内部使用的辅助函数，只在本文件可见 */
 static int loadUsers(User users[], int maxCount);
 static int findUser(const User users[], int count, const char name[]);
 static int isNameUsed(const char name[]);
 
-/*------------------------------------------------------------------------
- * 函数：checkPassword
- * 功  能：检测密码安全等级（接口说明见 account.h）。
- * 思  路：先判断长度，再统计“四类字符”中出现了几类，最后按类数定等级。
- *------------------------------------------------------------------------*/
-int checkPassword(char password[])
+/*
+ * 功能：检查密码长度和字符种类
+ * 输入：password 是要检查的密码
+ * 输出：不修改密码；数字、大小写字母和其他符号分别算一类
+ * 返回值：不足 6 位或至多一类返回 0，两类返回 1，三类及以上返回 2
+ */
+static int checkPassword(char password[])
 {
     int length;         /* 密码的字符个数（不含结束符）              */
     int hasLower = 0;   /* 是否含小写字母：1 有，0 无                */
@@ -33,7 +32,7 @@ int checkPassword(char password[])
     int i;              /* 扫描密码用的下标                          */
     unsigned char ch;   /* 当前字符，用无符号类型可避免 ctype 越界   */
 
-    if (password == NULL)                       /* 防御性检查：空指针直接判不安全 */
+    if (password == NULL)                       /* 没有密码时按不安全处理 */
     {
         return 0;
     }
@@ -77,11 +76,13 @@ int checkPassword(char password[])
     return 2;                                   /* 三类及以上：安全 */
 }
 
-/*------------------------------------------------------------------------
- * 函数：registerUser
- * 功  能：把新用户追加写入 users.txt（接口说明见 account.h）。
- *------------------------------------------------------------------------*/
-int registerUser(User user)
+/*
+ * 功能：把新账号追加到账号文件
+ * 输入：user 是待注册的用户名和密码
+ * 输出：成功时将账号写入 users.txt
+ * 返回值：成功返回 1；账号为空、重名、已满或文件读写失败返回 0
+ */
+static int registerUser(User user)
 {
     FILE *fp;       /* 指向 users.txt 的文件指针                 */
     int used;       /* 用户名是否已被占用：1 已占用，0 未占用    */
@@ -110,19 +111,20 @@ int registerUser(User user)
         return 0;                       /* 写入失败 */
     }
 
-    if (fclose(fp) != 0)                /* 关闭失败说明数据可能没有完整落盘 */
+    if (fclose(fp) != 0)                /* 关闭失败时，数据可能没有保存完整 */
     {
         return 0;
     }
     return 1;                           /* 注册成功 */
 }
 
-/*------------------------------------------------------------------------
- * 函数：loginUser
- * 功  能：验证用户名和密码是否与账号文件中的某一记录完全一致。
- * 说  明：把文件读入结构体数组后逐个比较，不使用链表。
- *------------------------------------------------------------------------*/
-int loginUser(User user)
+/*
+ * 功能：检查用户名和密码是否与已保存的账号一致
+ * 输入：user 是待验证的账号信息
+ * 输出：不修改账号文件
+ * 返回值：匹配成功返回 1，否则返回 0
+ */
+static int loginUser(User user)
 {
     User users[USER_MAX];   /* 从文件读入的账号数组            */
     int count;              /* 实际读入的账号个数              */
@@ -141,15 +143,12 @@ int loginUser(User user)
     return 0;               /* 用户名不存在或密码错误 */
 }
 
-/*------------------------------------------------------------------------
- * 函数：loadUsers
- * 功  能：把 users.txt 中的账号读入结构体数组。
- * 参  数：users    —— 用来接收账号的数组，由调用者提供；
- *         maxCount —— 数组最多能装下的账号个数。
- * 返  回：实际读入的账号个数；文件不存在时返回 0（首次运行视为空表）。
- * 说  明："%31s %63s" 中的宽度正好对应 name 的 31 字节和 password 的
- *         63 字节，可以防止读入超长字符串把数组写坏。
- *------------------------------------------------------------------------*/
+/*
+ * 功能：从账号文件读取账号
+ * 输入：users 是接收账号的数组，maxCount 是最多读取的个数
+ * 输出：将读取的账号写入 users
+ * 返回值：实际读入的个数；文件不存在返回 0，读取失败返回 -1
+ */
 static int loadUsers(User users[], int maxCount)
 {
     FILE *fp;           /* 指向 users.txt 的文件指针   */
@@ -176,11 +175,12 @@ static int loadUsers(User users[], int maxCount)
     return count;
 }
 
-/*------------------------------------------------------------------------
- * 函数：findUser
- * 功  能：在已读入的账号数组中按用户名查找。
- * 返  回：找到时返回该账号在数组中的下标（从 0 开始），找不到返回 -1。
- *------------------------------------------------------------------------*/
+/*
+ * 功能：按用户名查找账号
+ * 输入：users 是账号数组，count 是账号个数，name 是要查找的用户名
+ * 输出：不修改数组
+ * 返回值：找到返回数组下标，找不到返回 -1
+ */
 static int findUser(const User users[], int count, const char name[])
 {
     int i;              /* 遍历数组用的下标 */
@@ -195,11 +195,12 @@ static int findUser(const User users[], int count, const char name[])
     return -1;
 }
 
-/*------------------------------------------------------------------------
- * 函数：isNameUsed
- * 功  能：判断用户名是否已经在 users.txt 中出现过。
- * 返  回：1 表示已被占用，0 表示可以使用。
- *------------------------------------------------------------------------*/
+/*
+ * 功能：检查用户名是否可以注册
+ * 输入：name 是要检查的用户名
+ * 输出：读取账号文件，不修改文件
+ * 返回值：已注册返回 1，可以使用返回 0，读取失败或账号已满返回 -1
+ */
 static int isNameUsed(const char name[])
 {
     User users[USER_MAX];   /* 临时存放读入的账号 */
@@ -207,11 +208,87 @@ static int isNameUsed(const char name[])
 
     count = loadUsers(users, USER_MAX);
     if (count < 0 || count >= USER_MAX) {
-        return -1;  /* 文件读取失败或账号数组已满，不再追加。 */
+        return -1;  /* 文件读取失败或账号数组已满，不再追加 */
     }
     if (findUser(users, count, name) >= 0)
     {
         return 1;
     }
+    return 0;
+}
+
+
+/*
+ * 功能：读取用户名和密码
+ * 输入：user 是接收账号信息的结构体地址，通过键盘输入账号
+ * 输出：将输入写入 user->name 和 user->password，读取失败时退出程序
+ *       用户名最多 31 字节，密码最多 63 字节，均不能含空格
+ * 返回值：无
+ */
+static void readUser(User *user)
+{
+    printf("请输入用户名（不含空格，最多 31 字节）：");
+    if (scanf("%31s", user->name) != 1) {
+        exit(0);
+    }
+    printf("请输入密码（不含空格，最多 63 字节）：");
+    if (scanf("%63s", user->password) != 1) {
+        exit(0);
+    }
+}
+
+/*
+ * 功能：完成注册流程并提示结果
+ * 输入：无参数，通过键盘输入账号，密码不安全时选择继续或取消
+ * 输出：显示密码安全等级和注册结果，成功时写入 users.txt
+ * 返回值：无
+ */
+void doRegister(void)
+{
+    User user;
+    int safety;
+    int choice;
+    printf("\n---------- 注册新用户 ----------\n");
+    readUser(&user);
+    safety = checkPassword(user.password);
+    if (safety == 0) {
+        printf("密码安全等级：不安全（少于 6 位，或只含一类字符）。\n");
+        do {
+            printf("是否仍要使用该密码注册？1=继续 0=取消：");
+            if (scanf("%d", &choice) != 1) {
+                exit(0);
+            }
+        } while (choice < 0 || choice > 1);
+        if (choice == 0) {
+            printf("已取消注册。\n");
+            return;
+        }
+    } else if (safety == 1) {
+        printf("密码安全等级：中度安全（包含两类字符）。\n");
+    } else {
+        printf("密码安全等级：安全（包含三类及以上字符）。\n");
+    }
+    if (registerUser(user) == 1) {
+        printf("注册成功，请使用该账号登录。\n");
+    } else {
+        printf("注册失败：用户名已存在、账号已满或文件读写失败。\n");
+    }
+}
+
+/*
+ * 功能：读取账号并完成登录检查
+ * 输入：user 是接收账号信息的结构体地址
+ * 输出：将输入的账号保存在 *user 中，显示登录结果
+ * 返回值：成功返回 1，失败返回 0
+ */
+int doLogin(User *user)
+{
+    printf("\n---------- 用户登录 ----------\n");
+    readUser(user);
+    if (loginUser(*user) == 1) {
+        printf("登录成功，欢迎你，%s！\n", user->name);
+        return 1;
+    }
+    printf("登录失败：用户名或密码不正确。\n");
     return 0;
 }
