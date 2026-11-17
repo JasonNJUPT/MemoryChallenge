@@ -1,5 +1,6 @@
 #include <stdlib.h>  // exit
 // 账号注册、登录和文件保存，users.txt 每行存一个用户名和密码
+// 2026-11-17 account 分支：新增日期注释
 #include <errno.h>      /* 区分首次运行无文件与读取错误 */
 #include <stdio.h>      /* printf、fopen、fprintf 等输入输出函数 */
 #include <string.h>     /* strcmp、strlen 等字符串函数           */
@@ -292,3 +293,4 @@ int doLogin(User *user)
     printf("登录失败：用户名或密码不正确。\n");
     return 0;
 }
+//111726修改
