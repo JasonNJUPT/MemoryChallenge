@@ -1,48 +1,61 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<?xml version='1.0' encoding='utf-8'?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
   <ItemGroup>
-    <Filter Include="源文件">
-      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
-      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    <Filter Include="01 主流程">
+      <UniqueIdentifier>{C37F732A-B969-4C5B-B0AD-A114F3D8DCAB}</UniqueIdentifier>
     </Filter>
-    <Filter Include="头文件">
-      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
-      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    <Filter Include="02 游戏">
+      <UniqueIdentifier>{C2998254-1371-40C7-AF99-B7183B9C0F30}</UniqueIdentifier>
     </Filter>
-    <Filter Include="资源文件">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    <Filter Include="03 账号">
+      <UniqueIdentifier>{98EB0735-B5D6-4071-AE60-22EF5CCA48DE}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="04 排行榜">
+      <UniqueIdentifier>{1A0B975C-3D78-44CE-A237-118C139C7D18}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="05 公共界面">
+      <UniqueIdentifier>{B37EF95B-4F5D-4107-9202-C3037A0A6898}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="06 raylib">
+      <UniqueIdentifier>{D9207611-5DDB-4A78-B236-C70E8E419749}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-  </ItemGroup>
-  <ItemGroup>
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="game.c"><Filter>源文件</Filter></ClCompile>
-    <ClInclude Include="game.h"><Filter>头文件</Filter></ClInclude>
-  </ItemGroup>
-  <ItemGroup>
-  </ItemGroup>
-  <ItemGroup>
-  </ItemGroup>
-  <ItemGroup>
-  </ItemGroup>
-  <ItemGroup>
-  </ItemGroup>
-  <ItemGroup>
-  </ItemGroup>
-  <ItemGroup>
-  </ItemGroup>
-  <ItemGroup>
-  </ItemGroup>
-  <ItemGroup>
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="main.c"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="account.c"><Filter>源文件</Filter></ClCompile>
-    <ClCompile Include="rank.c"><Filter>源文件</Filter></ClCompile>
-    <ClInclude Include="account.h"><Filter>头文件</Filter></ClInclude>
-    <ClInclude Include="rank.h"><Filter>头文件</Filter></ClInclude>
+    <ClCompile Include="main.c">
+      <Filter>01 主流程</Filter>
+    </ClCompile>
+    <ClCompile Include="game.c">
+      <Filter>02 游戏</Filter>
+    </ClCompile>
+    <ClInclude Include="game.h">
+      <Filter>02 游戏</Filter>
+    </ClInclude>
+    <ClCompile Include="account.c">
+      <Filter>03 账号</Filter>
+    </ClCompile>
+    <ClInclude Include="account.h">
+      <Filter>03 账号</Filter>
+    </ClInclude>
+    <ClCompile Include="rank.c">
+      <Filter>04 排行榜</Filter>
+    </ClCompile>
+    <ClInclude Include="rank.h">
+      <Filter>04 排行榜</Filter>
+    </ClInclude>
+    <ClCompile Include="ui.c">
+      <Filter>05 公共界面</Filter>
+    </ClCompile>
+    <ClInclude Include="ui.h">
+      <Filter>05 公共界面</Filter>
+    </ClInclude>
+    <ClInclude Include="$(RaylibDir)include\raylib.h">
+      <Filter>06 raylib</Filter>
+    </ClInclude>
+    <ClInclude Include="$(RaylibDir)include\raymath.h">
+      <Filter>06 raylib</Filter>
+    </ClInclude>
+    <ClInclude Include="$(RaylibDir)include\rlgl.h">
+      <Filter>06 raylib</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
