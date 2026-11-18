@@ -61,6 +61,9 @@
 #define PAGE_BACK_X   40.0f    // 返回按钮横坐标
 #define PAGE_BACK_Y   520.0f   // 返回按钮纵坐标
 
+// 返回按钮的位置固定，绘制和点击判断共用
+static const Rectangle backButton = {PAGE_BACK_X, PAGE_BACK_Y, PAGE_BTN_W, PAGE_BTN_H};
+
 /*
  * 一条成绩记录
  * name    玩家名字，最长 31 字节
@@ -387,22 +390,6 @@ int saveScore(const char name[], int level, int seconds)
 }
 
 /*
- * 功能：检查某一难度是否有成绩
- * 输入：level 是难度 1、2、3
- * 输出：必要时读取排行榜文件
- * 返回值：有成绩返回 1，全为空返回 0，读取失败返回 -1
- */
-static int hasRankData(int level)
-{
-    if (!g_loaded) loadRanks();
-    if (g_readError) return -1;
-    if (level < 1 || level > RANK_LEVELS) return 0;
-
-    // 只要这一档的条数大于 0，就说明有成绩
-    return (g_count[level - 1] > 0) ? 1 : 0;
-}
-
-/*
  * 功能：准备排行榜页面
  * 输入：无
  * 输出：默认选择初级，必要时读取一次成绩文件
@@ -443,24 +430,6 @@ static Rectangle levelButtonRect(int level)
 }
 
 /*
- * 功能：取得返回按钮的位置
- * 输入：无
- * 输出：无
- * 返回值：按钮矩形
- */
-static Rectangle backButtonRect(void)
-{
-    Rectangle rect;
-
-    rect.x = PAGE_BACK_X;
-    rect.y = PAGE_BACK_Y;
-    rect.width = PAGE_BTN_W;
-    rect.height = PAGE_BTN_H;
-
-    return rect;
-}
-
-/*
  * 功能：处理难度选择和返回按钮
  * 输入：无，通过本帧鼠标操作
  * 输出：修改当前显示的难度
@@ -483,7 +452,7 @@ int updateRankPage(void)
 
     // 返回按钮：告诉 main 该回玩家菜单了
     // 注意本函数不负责切换页面，切换是 main 的事，我们只返回意图
-    if (isButtonClicked(backButtonRect())) return 1;
+    if (isButtonClicked(backButton)) return 1;
 
     return 0;
 }
@@ -526,7 +495,7 @@ void drawRankPage(Font font)
     }
 
     // 返回按钮放在左下角
-    drawButton(backButtonRect(), "返回", font);
+    drawButton(backButton, "返回", font);
 
     k = g_pageLevel - 1;
 

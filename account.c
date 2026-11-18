@@ -46,6 +46,14 @@
 #define CONFIRM_RIGHT_X  420.0f  // “返回修改”按钮左边缘
 #define MESSAGE_Y        444.0f  // 提示文字的纵坐标
 
+// 固定区域由输入判断和绘制共用，不需要每次调用函数构造
+static const Rectangle nameBox = {INPUT_X, NAME_BOX_Y, INPUT_W, INPUT_H};
+static const Rectangle passwordBox = {INPUT_X, PASSWORD_BOX_Y, INPUT_W, INPUT_H};
+static const Rectangle primaryButton = {BUTTON_LEFT_X, BUTTON_Y, BUTTON_W, BUTTON_H};
+static const Rectangle backButton = {BUTTON_RIGHT_X, BUTTON_Y, BUTTON_W, BUTTON_H};
+static const Rectangle confirmButton = {CONFIRM_LEFT_X, BUTTON_Y, CONFIRM_W, BUTTON_H};
+static const Rectangle cancelButton = {CONFIRM_RIGHT_X, BUTTON_Y, CONFIRM_W, BUTTON_H};
+
 /*------------------------------------------------------------------------
  * 本模块内部保存的页面状态。全部是 static，调用方看不到，也不需要关心
  *------------------------------------------------------------------------*/
@@ -83,16 +91,9 @@ static int findUser(const User users[], int count, const char name[]);
 static int isNameUsed(const char name[]);
 static void setMessage(const char *text, int isError);
 static void clearInputs(void);
-static void switchToLoginForm(void);
 static void buildUserFromForm(User *user);
 static void handleCharInput(void);
 static void handleBackspace(void);
-static Rectangle nameBoxBounds(void);
-static Rectangle passwordBoxBounds(void);
-static Rectangle primaryButtonBounds(void);
-static Rectangle backButtonBounds(void);
-static Rectangle confirmButtonBounds(void);
-static Rectangle cancelButtonBounds(void);
 static int tryLogin(User *user);
 static int registerCurrentForm(void);
 static int saveCurrentUser(void);
@@ -359,20 +360,6 @@ static void clearInputs(void)
 }
 
 /*------------------------------------------------------------------------
- * 函数：switchToLoginForm
- * 功  能：注册成功后把页面从注册表单换成登录表单
- * 输  入：无
- * 输  出：gRegisterMode 置 0，清空输入框
- * 返回值：无
- * 说  明：不自动登录，也不修改 *user，用户名要用户自己再输一次
- *------------------------------------------------------------------------*/
-static void switchToLoginForm(void)
-{
-    gRegisterMode = 0;
-    clearInputs();
-}
-
-/*------------------------------------------------------------------------
  * 函数：buildUserFromForm
  * 功  能：把两个输入框的内容复制成一个 User 结构体
  * 输  入：无
@@ -459,114 +446,6 @@ static void handleBackspace(void)
             gPassword[gPasswordLength] = '\0';
         }
     }
-}
-
-/*------------------------------------------------------------------------
- * 函数：nameBoxBounds
- * 功  能：给出用户名输入框的矩形区域
- * 输  入：无
- * 输  出：无
- * 返回值：用户名输入框的矩形，update 和 draw 都用它，保证位置一致
- *------------------------------------------------------------------------*/
-static Rectangle nameBoxBounds(void)
-{
-    Rectangle box;
-
-    box.x = INPUT_X;
-    box.y = NAME_BOX_Y;
-    box.width = INPUT_W;
-    box.height = INPUT_H;
-    return box;
-}
-
-/*------------------------------------------------------------------------
- * 函数：passwordBoxBounds
- * 功  能：给出密码输入框的矩形区域
- * 输  入：无
- * 输  出：无
- * 返回值：密码输入框的矩形
- *------------------------------------------------------------------------*/
-static Rectangle passwordBoxBounds(void)
-{
-    Rectangle box;
-
-    box.x = INPUT_X;
-    box.y = PASSWORD_BOX_Y;
-    box.width = INPUT_W;
-    box.height = INPUT_H;
-    return box;
-}
-
-/*------------------------------------------------------------------------
- * 函数：primaryButtonBounds
- * 功  能：给出左边主按钮（“登录”或“注册”）的矩形区域
- * 输  入：无
- * 输  出：无
- * 返回值：主按钮的矩形
- *------------------------------------------------------------------------*/
-static Rectangle primaryButtonBounds(void)
-{
-    Rectangle button;
-
-    button.x = BUTTON_LEFT_X;
-    button.y = BUTTON_Y;
-    button.width = BUTTON_W;
-    button.height = BUTTON_H;
-    return button;
-}
-
-/*------------------------------------------------------------------------
- * 函数：backButtonBounds
- * 功  能：给出右边“返回”按钮的矩形区域
- * 输  入：无
- * 输  出：无
- * 返回值：返回按钮的矩形
- *------------------------------------------------------------------------*/
-static Rectangle backButtonBounds(void)
-{
-    Rectangle button;
-
-    button.x = BUTTON_RIGHT_X;
-    button.y = BUTTON_Y;
-    button.width = BUTTON_W;
-    button.height = BUTTON_H;
-    return button;
-}
-
-/*------------------------------------------------------------------------
- * 函数：confirmButtonBounds
- * 功  能：给出弱密码确认区“继续注册”按钮的矩形区域
- * 输  入：无
- * 输  出：无
- * 返回值：继续注册按钮的矩形
- *------------------------------------------------------------------------*/
-static Rectangle confirmButtonBounds(void)
-{
-    Rectangle button;
-
-    button.x = CONFIRM_LEFT_X;
-    button.y = BUTTON_Y;
-    button.width = CONFIRM_W;
-    button.height = BUTTON_H;
-    return button;
-}
-
-/*------------------------------------------------------------------------
- * 函数：cancelButtonBounds
- * 功  能：给出弱密码确认区“返回修改”按钮的矩形区域
- * 输  入：无
- * 输  出：无
- * 返回值：返回修改按钮的矩形
- *------------------------------------------------------------------------*/
-static Rectangle cancelButtonBounds(void)
-{
-    Rectangle button;
-
-    button.x = CONFIRM_RIGHT_X;
-    button.y = BUTTON_Y;
-    button.width = CONFIRM_W;
-    button.height = BUTTON_H;
-    return button;
 }
 
 /*------------------------------------------------------------------------
@@ -693,7 +572,7 @@ static int saveCurrentUser(void)
 
     if (registerUser(newUser) == 1)
     {
-        switchToLoginForm();  // 切回登录表单
+        resetAccountPage(0);  // 复用页面重置，切回登录表单
         setMessage("注册成功，请登录", 0);
         return 0;
     }
@@ -738,12 +617,12 @@ int updateAccountPage(User *user)
     // 弱密码确认状态下，只响应“继续注册”和“返回修改”两个按钮
     if (gConfirmWeak != 0)
     {
-        if (isButtonClicked(confirmButtonBounds()) != 0)
+        if (isButtonClicked(confirmButton) != 0)
         {
             gConfirmWeak = 0;
             return saveCurrentUser();  // 用户确认，真正写入文件
         }
-        if (isButtonClicked(cancelButtonBounds()) != 0)
+        if (isButtonClicked(cancelButton) != 0)
         {
             gConfirmWeak = 0;  // 取消确认，什么也不写
             setMessage("请修改密码后再注册", 1);
@@ -771,17 +650,17 @@ int updateAccountPage(User *user)
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))  // 点输入框切换焦点
     {
         mouse = GetMousePosition();
-        if (CheckCollisionPointRec(mouse, nameBoxBounds()))
+        if (CheckCollisionPointRec(mouse, nameBox))
         {
             gFocus = 0;
         }
-        else if (CheckCollisionPointRec(mouse, passwordBoxBounds()))
+        else if (CheckCollisionPointRec(mouse, passwordBox))
         {
             gFocus = 1;
         }
     }
 
-    if (isButtonClicked(primaryButtonBounds()) != 0)  // 主按钮：登录或注册
+    if (isButtonClicked(primaryButton) != 0)  // 主按钮：登录或注册
     {
         if (gRegisterMode != 0)
         {
@@ -790,7 +669,7 @@ int updateAccountPage(User *user)
         return tryLogin(user);
     }
 
-    if (isButtonClicked(backButtonBounds()) != 0)  // 返回入口菜单
+    if (isButtonClicked(backButton) != 0)  // 返回入口菜单
     {
         return 2;
     }
@@ -963,7 +842,7 @@ void drawAccountPage(Font font)
 
     // 用户名输入框
     drawTextAt(font, "用户名", INPUT_X, 162.0f, 20, COLOR_LABEL);
-    drawInputBox(font, nameBoxBounds(), gName, "请输入用户名", gFocus == 0);
+    drawInputBox(font, nameBox, gName, "请输入用户名", gFocus == 0);
 
     // 密码输入框：先把每个字符换成星号再显示，屏幕上不出现原密码
     for (i = 0; i < gPasswordLength; i++)
@@ -972,7 +851,7 @@ void drawAccountPage(Font font)
     }
     masked[gPasswordLength] = '\0';
     drawTextAt(font, "密码", INPUT_X, 252.0f, 20, COLOR_LABEL);
-    drawInputBox(font, passwordBoxBounds(), masked, "请输入密码", gFocus == 1);
+    drawInputBox(font, passwordBox, masked, "请输入密码", gFocus == 1);
 
     if (gRegisterMode != 0)  // 注册页额外显示密码强度
     {
@@ -982,14 +861,14 @@ void drawAccountPage(Font font)
     // 按钮：等待弱密码确认时换成“继续注册 / 返回修改”，其余时候是主按钮和返回
     if (gConfirmWeak != 0)
     {
-        drawButton(confirmButtonBounds(), "继续注册", font);
-        drawButton(cancelButtonBounds(), "返回修改", font);
+        drawButton(confirmButton, "继续注册", font);
+        drawButton(cancelButton, "返回修改", font);
     }
     else
     {
-        drawButton(primaryButtonBounds(),
+        drawButton(primaryButton,
                    (gRegisterMode != 0) ? "注册" : "登录", font);
-        drawButton(backButtonBounds(), "返回", font);
+        drawButton(backButton, "返回", font);
     }
 
     // 底部提示文字：成功是绿色，错误是红色

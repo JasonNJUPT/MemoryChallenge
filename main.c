@@ -27,8 +27,6 @@ static const Rectangle rankButton = {180, 340, 440, 48};
 static const Rectangle exitButton = {300, 460, 200, 48};
 static const Rectangle backButton = {300, 460, 200, 48};
 
-// 加载公共字体，缺少资源文件时尝试读取本机已有的黑体
-static int loadMainFont(Font *font);
 // 在窗口中居中绘制一行文字
 static void drawCentered(Font font, const char text[], float y, float size);
 // 绘制主菜单
@@ -68,7 +66,7 @@ int main(void)
     SetTargetFPS(60);
     SetExitKey(KEY_NULL);
 
-    if (!loadMainFont(&font)) {
+    if (!loadUiResources(&font)) {
         CloseWindow();
         return 1;
     }
@@ -218,51 +216,6 @@ int main(void)
     unloadUiResources(font);
     CloseWindow();
     return 0;
-}
-
-/*
- * 功能：优先使用公共 UI 字体，没有文件时读取 Windows 自带字体
- * 输入：font 是接收字体的地址，调用前必须创建窗口
- * 输出：成功时写入 *font，不复制或下载字体文件
- * 返回值：1 成功，0 失败
- */
-static int loadMainFont(Font *font)
-{
-    const char *fontPath = "C:/Windows/Fonts/simhei.ttf";
-    const char *glyphs =
-        "忆倒计时当前用户完成配对亮作弊暂不可用中本局使用了亮牌不计入排行榜"
-        "切三上两个为于仍以位使修包及只号后含和字少尚强或换改有检法空符类置能英被要设该账足达量限"
-        "记忆力大考验排行榜初级中级高级返回名次用户名用时秒暂无成绩文件读取失败"
-        "写入测试成绩查看退出开始游戏分数恭喜通过再来一局主菜单登录注册密码"
-        "点击选择难度卡牌配对准成功剩余时间连击错误提示保存读取加载关闭窗口"
-        "重新记录刷新进入前五自定义模式关卡继续取消确定是否玩家当前最高最低"
-        "排名第本局得分已保存未保存请输入不存在安全等级图形化演示"
-        "！，。：（）、？； 0123456789abcdefghijklmnopqrstuvwxyz"
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ.:-+/()%#\"$&'*;<=>?@[\\]^_`{|}~!";
-    int count;
-    int *codepoints;
-    Font loaded;
-
-    if (FileExists("assets/fonts/chinese.ttf")) {
-        return loadUiResources(font);
-    }
-    if (!FileExists(fontPath)) {
-        TraceLog(LOG_ERROR, "Place a Chinese font at assets/fonts/chinese.ttf");
-        return 0;
-    }
-
-    codepoints = LoadCodepoints(glyphs, &count);
-    if (codepoints == NULL) {
-        return 0;
-    }
-    loaded = LoadFontEx(fontPath, 192, codepoints, count);
-    UnloadCodepoints(codepoints);
-    if (!IsFontValid(loaded) || loaded.texture.id == GetFontDefault().texture.id) {
-        return 0;
-    }
-    SetTextureFilter(loaded.texture, TEXTURE_FILTER_BILINEAR);
-    *font = loaded;
-    return 1;
 }
 
 /*

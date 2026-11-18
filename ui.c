@@ -34,6 +34,7 @@
 #include "ui.h"
 
 #define UI_FONT_PATH      "assets/fonts/chinese.ttf"   // 组内提供的字体文件
+#define UI_SYSTEM_FONT_PATH "C:/Windows/Fonts/simhei.ttf"  // 缺少组内字体时使用本机黑体
 #define UI_FONT_SIZE      192       // 字体生成尺寸（像素），画的时候可以缩放
 #define UI_CODEPOINT_MAX  512      // 码点数组的容量上限
 
@@ -48,7 +49,7 @@
  */
 static const char UI_GLYPHS[] =
     "忆倒计时当前用户完成配对亮作弊暂不可用中本局使用了亮牌不计入排行榜"
-    "三上两个为于仍以位使修包及只号后含和字少尚强或换改有检法空符类置能英被要设该账足达量限"
+    "切三上两个为于仍以位使修包及只号后含和字少尚强或换改有检法空符类置能英被要设该账足达量限"
     "记忆力大考验排行榜初级中级高级返回名次用户名用时秒暂无成绩文件读取失败"
     "写入测试成绩查看退出开始游戏分数恭喜通过再来一局主菜单登录注册密码"
     "点击选择难度卡牌配对准成功剩余时间连击错误提示保存读取加载关闭窗口"
@@ -209,23 +210,25 @@ int loadUiResources(Font *font)
     // 而且只需要一份，没必要每次都重新分配
     static int codepoints[UI_CODEPOINT_MAX];
 
+    const char *fontPath = UI_FONT_PATH;
     int count;
     Font loaded;
 
     // 传进来的是指针，先确认不是空指针，否则写 *font 会崩溃
     if (font == NULL) return 0;
 
-    // 先检查文件在不在，这样能给出"缺字体文件"这种明确的原因
-    if (!FileExists(UI_FONT_PATH))
+    // 优先使用组内字体；只有文件不存在时才尝试系统字体
+    if (!FileExists(fontPath)) fontPath = UI_SYSTEM_FONT_PATH;
+    if (!FileExists(fontPath))
     {
-        TraceLog(LOG_ERROR, "UI: font file not found: %s", UI_FONT_PATH);
+        TraceLog(LOG_ERROR, "UI: font file not found: %s", fontPath);
         return 0;
     }
 
     // 再检查文件头：完全无效的文件会让 raylib 内部崩溃，必须在加载前拦下来
-    if (!fontFileLooksValid(UI_FONT_PATH))
+    if (!fontFileLooksValid(fontPath))
     {
-        TraceLog(LOG_ERROR, "UI: not a valid ttf/otf file: %s", UI_FONT_PATH);
+        TraceLog(LOG_ERROR, "UI: not a valid ttf/otf file: %s", fontPath);
         return 0;
     }
 
@@ -242,17 +245,16 @@ int loadUiResources(Font *font)
     //   第三个参数：需要哪些字的码点
     //   第四个参数：码点个数
     // 如果用 LoadFont（不带 Ex），只会加载默认 ASCII 字形，中文画不出来
-    loaded = LoadFontEx(UI_FONT_PATH, UI_FONT_SIZE, codepoints, count);
+    loaded = LoadFontEx(fontPath, UI_FONT_SIZE, codepoints, count);
 
-    // 判断是否真的加载成功：
-    //   texture.id == 0 表示字体纹理没建出来
-    //   glyphCount <= 0 表示一个字形都没有
-    if (loaded.texture.id == 0 || loaded.glyphCount <= 0)
+    // 字体必须有效，且不能是加载失败后返回的默认 ASCII 字体
+    if (!IsFontValid(loaded) || loaded.texture.id == GetFontDefault().texture.id)
     {
-        TraceLog(LOG_ERROR, "UI: failed to load font: %s", UI_FONT_PATH);
+        TraceLog(LOG_ERROR, "UI: failed to load font: %s", fontPath);
 
         // 失败也要把自己刚申请的资源释放掉，不能留给调用方收拾
-        if (loaded.texture.id != 0) UnloadFont(loaded);
+        if (loaded.texture.id != 0 && loaded.texture.id != GetFontDefault().texture.id)
+            UnloadFont(loaded);
         return 0;
     }
 

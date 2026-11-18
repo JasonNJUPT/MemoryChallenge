@@ -50,7 +50,7 @@ static int isFinished(void);
 // 同一套坐标用于绘制和鼠标判断
 static float getPreviewProgress(void);
 static GameLayout getGameLayout(void);
-static Rectangle cardBounds(int row, int col);
+static Rectangle cardBounds(GameLayout layout, int row, int col);
 static void drawCardPicture(Texture2D picture, Rectangle bounds);
 
 /*
@@ -131,6 +131,7 @@ int updateGame(int *seconds)
 {
     int r, c, i;
     double now = GetTime();
+    GameLayout layout;
 
     if (phase == GAME_IDLE || phase == GAME_EXITED) {
         return 2;
@@ -139,8 +140,9 @@ int updateGame(int *seconds)
         *seconds = elapsedSeconds;
         return 1;
     }
+    layout = getGameLayout();
     // 亮牌和等待盖回期间，仍然可以退出
-    if (isButtonClicked(getGameLayout().backButton)) {
+    if (isButtonClicked(layout.backButton)) {
         phase = GAME_EXITED;
         return 2;
     }
@@ -159,7 +161,7 @@ int updateGame(int *seconds)
         }
         return 0;  // 亮牌期间不允许选牌或重复触发
     }
-    if (phase == GAME_SELECT && isButtonClicked(getGameLayout().revealButton)) {
+    if (phase == GAME_SELECT && isButtonClicked(layout.revealButton)) {
         cheatCount++;
         revealEnd = now + 4.0;
         phase = GAME_REVEAL;
@@ -181,7 +183,7 @@ int updateGame(int *seconds)
     for (r = 0; r < rows; r++) {
         for (c = 0; c < cols; c++) {
             if (state[r][c] != 0 ||
-                !CheckCollisionPointRec(GetMousePosition(), cardBounds(r, c))) {
+                !CheckCollisionPointRec(GetMousePosition(), cardBounds(layout, r, c))) {
                 continue;
             }
             state[r][c] = 1;
@@ -269,7 +271,7 @@ void drawGame(Font font)
     }
     for (r = 0; r < rows; r++) {
         for (c = 0; c < cols; c++) {
-            bounds = cardBounds(r, c);
+            bounds = cardBounds(layout, r, c);
             fill = state[r][c] == 2 ? (Color){200, 235, 210, 255} : WHITE;
             if (phase != GAME_PREVIEW && phase != GAME_REVEAL && state[r][c] == 0) {
                 DrawRectangleRec(bounds, (Color){75, 125, 185, 255});
@@ -454,13 +456,12 @@ static GameLayout getGameLayout(void)
 
 /*
  * 功能：计算指定卡牌的实际矩形，绘制和点击判断共用此函数
- * 输入：row、col 为有效行列下标
+ * 输入：layout 为本帧计算的布局，row、col 为有效行列下标
  * 输出：无
  * 返回值：使用动态卡牌大小和间距计算的矩形
  */
-static Rectangle cardBounds(int row, int col)
+static Rectangle cardBounds(GameLayout layout, int row, int col)
 {
-    GameLayout layout = getGameLayout();
     return (Rectangle){layout.left + col * (layout.cardWidth + layout.gap),
                        layout.top + row * (layout.cardHeight + layout.gap),
                        layout.cardWidth, layout.cardHeight};
