@@ -60,7 +60,7 @@ int main(void)
 
     srand((unsigned int)time(NULL));
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-    InitWindow(2560, 1440, "Memory Challenge");
+    InitWindow(2560, 1440, "记忆力大考验");
     if (!IsWindowReady()) {
         return 1;
     }
@@ -146,8 +146,11 @@ int main(void)
             case PAGE_GAME:
                 gameResult = updateGame(&seconds);
                 if (gameResult == 1) {
-                    // 只在通关这一刻提交一次，不在结算页反复写文件
-                    saveResult = saveScore(user.name, level, seconds);
+                    // 作弊局只显示结算，不向排行榜提交成绩
+                    saveResult = 0;
+                    if (getGameCheats() == 0) {
+                        saveResult = saveScore(user.name, level, seconds);
+                    }
                     page = PAGE_RESULT;
                 } else if (gameResult == 2) {
                     page = PAGE_MENU;
@@ -182,7 +185,7 @@ int main(void)
                 break;
             case PAGE_MENU:
                 drawMenu(font, 1);
-                drawCentered(font, TextFormat("User: %s", user.name), 125, 20);
+                drawCentered(font, TextFormat("当前用户：%s", user.name), 125, 20);
                 break;
             case PAGE_LEVEL:
                 drawLevels(font);
@@ -192,9 +195,14 @@ int main(void)
                 break;
             case PAGE_RESULT:
                 drawCentered(font, "恭喜通关", 90, 36);
-                drawCentered(font, TextFormat("Time: %d s", seconds), 180, 28);
-                drawCentered(font, saveResult == 1 ? "成绩已保存" :
-                    saveResult == 0 ? "未刷新成绩" : "成绩保存失败", 240, 24);
+                drawCentered(font, TextFormat("用时：%d 秒", seconds), 180, 28);
+                drawCentered(font, TextFormat("配对错误：%d 次   作弊：%d 次", getGameMistakes(), getGameCheats()), 215, 20);
+                if (getGameCheats() != 0) {
+                    drawCentered(font, "本局使用了亮牌，不计入排行榜", 250, 22);
+                } else {
+                    drawCentered(font, saveResult == 1 ? "成绩已保存" :
+                        saveResult == 0 ? "未刷新成绩" : "成绩保存失败", 250, 24);
+                }
                 drawButton(rankButton, "排行榜", font);
                 drawButton(backButton, "返回", font);
                 break;
@@ -222,6 +230,7 @@ static int loadMainFont(Font *font)
 {
     const char *fontPath = "C:/Windows/Fonts/simhei.ttf";
     const char *glyphs =
+        "忆倒计时当前用户完成配对亮作弊暂不可用中本局使用了亮牌不计入排行榜"
         "切三上两个为于仍以位使修包及只号后含和字少尚强或换改有检法空符类置能英被要设该账足达量限"
         "记忆力大考验排行榜初级中级高级返回名次用户名用时秒暂无成绩文件读取失败"
         "写入测试成绩查看退出开始游戏分数恭喜通过再来一局主菜单登录注册密码"
