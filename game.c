@@ -8,12 +8,17 @@ static int state[6][6];  // 0 盖住，1 本轮翻开，2 已配对
 static int selectedRows[3], selectedCols[3];
 static int rows, cols, count, groupSize;
 static int currentLevel, elapsedSeconds;
+static int matchErrors;  // 选满一组后配对失败才计一次
 static double previewEnd, startTime, hideTime;
+static int previewSeconds;
+static int cheatCount;
+static double revealEnd;
 
 typedef enum {
     GAME_IDLE,
     GAME_PREVIEW,
     GAME_SELECT,
+    GAME_REVEAL,
     GAME_WAIT,
     GAME_FINISHED,
     GAME_EXITED
@@ -34,6 +39,7 @@ typedef struct {
     float left, top;
     float cardWidth, cardHeight, gap;
     Rectangle backButton;
+    Rectangle revealButton;
 } GameLayout;
 
 // 初始化、洗牌、配对和通关判断
@@ -42,8 +48,9 @@ static void shuffleBoard(void);
 static int checkMatch(void);
 static int isFinished(void);
 // 同一套坐标用于绘制和鼠标判断
+static float getPreviewProgress(void);
 static GameLayout getGameLayout(void);
-static Rectangle cardBounds(int row, int col);
+static Rectangle cardBounds(GameLayout layout, int row, int col);
 static void drawCardPicture(Texture2D picture, Rectangle bounds);
 
 /*
@@ -71,12 +78,16 @@ int loadGameResources(void)
         unloadGameResources();
         return 0;
     }
+    SetTextureFilter(back, TEXTURE_FILTER_BILINEAR);
     for (i = 0; i < 12; i++) {
         faces[i] = LoadTexture(TextFormat("assets/cards/%02d.png", i));
         if (!IsTextureValid(faces[i])) {
             unloadGameResources();
             return 0;
         }
+    }
+    for (i = 0; i < 12; i++) {
+        SetTextureFilter(faces[i], TEXTURE_FILTER_BILINEAR);
     }
     usePictures = 1;
     return 1;
@@ -90,7 +101,6 @@ int loadGameResources(void)
  */
 int startGame(int level)
 {
-    int showSeconds;
     phase = GAME_IDLE;
     if (level < 1 || level > 3) {
         return 0;
@@ -100,10 +110,13 @@ int startGame(int level)
     shuffleBoard();
     count = 0;
     elapsedSeconds = 0;
+    matchErrors = 0;
+    cheatCount = 0;
+    revealEnd = 0;
     startTime = 0;
     hideTime = 0;
-    showSeconds = level == 1 ? 4 : level == 2 ? 6 : 8;
-    previewEnd = GetTime() + showSeconds;
+    previewSeconds = level == 1 ? 4 : level == 2 ? 6 : 8;
+    previewEnd = GetTime() + previewSeconds;
     phase = GAME_PREVIEW;
     return 1;
 }
@@ -118,6 +131,7 @@ int updateGame(int *seconds)
 {
     int r, c, i;
     double now = GetTime();
+    GameLayout layout;
 
     if (phase == GAME_IDLE || phase == GAME_EXITED) {
         return 2;
@@ -126,8 +140,9 @@ int updateGame(int *seconds)
         *seconds = elapsedSeconds;
         return 1;
     }
+    layout = getGameLayout();
     // 亮牌和等待盖回期间，仍然可以退出
-    if (isButtonClicked(getGameLayout().backButton)) {
+    if (isButtonClicked(layout.backButton)) {
         phase = GAME_EXITED;
         return 2;
     }
@@ -140,6 +155,18 @@ int updateGame(int *seconds)
     }
 
     elapsedSeconds = (int)(now - startTime);
+    if (phase == GAME_REVEAL) {
+        if (now >= revealEnd) {
+            phase = GAME_SELECT;
+        }
+        return 0;  // 亮牌期间不允许选牌或重复触发
+    }
+    if (phase == GAME_SELECT && isButtonClicked(layout.revealButton)) {
+        cheatCount++;
+        revealEnd = now + 4.0;
+        phase = GAME_REVEAL;
+        return 0;
+    }
     if (phase == GAME_WAIT) {
         if (now >= hideTime) {
             for (i = 0; i < count; i++) {
@@ -156,7 +183,7 @@ int updateGame(int *seconds)
     for (r = 0; r < rows; r++) {
         for (c = 0; c < cols; c++) {
             if (state[r][c] != 0 ||
-                !CheckCollisionPointRec(GetMousePosition(), cardBounds(r, c))) {
+                !CheckCollisionPointRec(GetMousePosition(), cardBounds(layout, r, c))) {
                 continue;
             }
             state[r][c] = 1;
@@ -175,6 +202,7 @@ int updateGame(int *seconds)
                         return 1;
                     }
                 } else {
+                    matchErrors++;
                     hideTime = now + 1.0;
                     phase = GAME_WAIT;
                 }
@@ -186,6 +214,28 @@ int updateGame(int *seconds)
 }
 
 /*
+ * 功能：查询本局配对错误次数，供结算页面显示
+ * 输入：无
+ * 输出：无，不修改计数
+ * 返回值：本局完整选牌后配对失败的次数，新一局从 0 开始
+ */
+int getGameMistakes(void)
+{
+    return matchErrors;
+}
+
+/*
+ * 功能：查询本局手动亮牌的使用次数
+ * 输入：无
+ * 输出：无，不修改计数；开局自动亮牌不计入
+ * 返回值：本局作弊次数，新一局从 0 开始
+ */
+int getGameCheats(void)
+{
+    return cheatCount;
+}
+
+/*
  * 功能：绘制棋盘、阶段提示、用时和返回按钮
  * 输入：font 为主函数提供的中文字体
  * 输出：当前画面，不改变棋盘、阶段或计时
@@ -194,30 +244,36 @@ int updateGame(int *seconds)
 void drawGame(Font font)
 {
     int r, c;
-    int remaining;
     Rectangle bounds;
     Color fill;
     const char *label;
     Vector2 size;
     GameLayout layout = getGameLayout();
     float textSize;
-    DrawTextEx(font, TextFormat("Level %d - %d x %d", currentLevel, rows, cols),
+    DrawTextEx(font, (currentLevel == 1 ? "初级" : currentLevel == 2 ? "中级" : "高级"),
                (Vector2){-getUiCamera().offset.x / getUiCamera().zoom + 10, 8}, 18, 1, DARKGRAY);
-    if (phase == GAME_PREVIEW) {
-        remaining = (int)(previewEnd - GetTime() + 0.999999);
-        if (remaining < 0) remaining = 0;
-        label = TextFormat("Remember the cards: %d s", remaining);
-    } else if (phase == GAME_WAIT) {
-        label = "Not a match - wait 1 second";
+    DrawTextEx(font, TextFormat("作弊：%d 次", cheatCount),
+               (Vector2){-getUiCamera().offset.x / getUiCamera().zoom + 90, 10}, 16, 1, DARKGRAY);
+    if (phase == GAME_PREVIEW || phase == GAME_REVEAL) {
+        label = phase == GAME_PREVIEW ? "记忆倒计时" : "亮牌倒计时";
     } else {
-        label = TextFormat("Time: %d s   Select: %d / %d", elapsedSeconds, count, groupSize);
+        label = TextFormat("用时：%d 秒   配对错误：%d 次", elapsedSeconds, matchErrors);
     }
     DrawTextEx(font, label, (Vector2){-getUiCamera().offset.x / getUiCamera().zoom + 10, 32}, 16, 1, DARKGRAY);
+    if (phase == GAME_PREVIEW || phase == GAME_REVEAL) {
+        // 使用剩余时间的比例控制宽度，逐帧连续缩短，而不是每秒跳一格
+        float left = -getUiCamera().offset.x / getUiCamera().zoom + 10;
+        Rectangle track = {left + 170, 34, layout.revealButton.x - left - 182, 10};
+        Rectangle progress = track;
+        progress.width *= getPreviewProgress();
+        DrawRectangleRec(track, (Color){218, 226, 236, 255});
+        DrawRectangleRec(progress, (Color){65, 125, 190, 255});
+    }
     for (r = 0; r < rows; r++) {
         for (c = 0; c < cols; c++) {
-            bounds = cardBounds(r, c);
+            bounds = cardBounds(layout, r, c);
             fill = state[r][c] == 2 ? (Color){200, 235, 210, 255} : WHITE;
-            if (phase != GAME_PREVIEW && state[r][c] == 0) {
+            if (phase != GAME_PREVIEW && phase != GAME_REVEAL && state[r][c] == 0) {
                 DrawRectangleRec(bounds, (Color){75, 125, 185, 255});
                 if (usePictures) drawCardPicture(back, bounds);
             } else {
@@ -239,6 +295,8 @@ void drawGame(Font font)
                                  state[r][c] == 2 ? DARKGREEN : GRAY);
         }
     }
+    drawButton(layout.revealButton, phase == GAME_REVEAL ? "亮牌中" :
+               phase == GAME_SELECT ? "亮牌" : "暂不可用", font);
     drawButton(layout.backButton, "返回", font);
 }
 
@@ -337,6 +395,26 @@ static int isFinished(void)
 }
 
 /*
+ * 功能：计算开局或手动亮牌阶段还剩多少比例
+ * 输入：使用当前阶段的截止时间、亮牌总秒数和当前时间
+ * 输出：无，不改变游戏状态
+ * 返回值：0 到 1，刚开始为 1，时间到后为 0
+ */
+static float getPreviewProgress(void)
+{
+    float progress;
+    if (phase == GAME_REVEAL) {
+        progress = (float)((revealEnd - GetTime()) / 4.0);
+    } else {
+        if (previewSeconds <= 0) return 0;
+        progress = (float)((previewEnd - GetTime()) / previewSeconds);
+    }
+    if (progress < 0) progress = 0;
+    if (progress > 1) progress = 1;
+    return progress;
+}
+
+/*
  * 功能：根据窗口大小和行列数分配棋盘区域
  * 输入：使用当前窗口尺寸和本局 rows、cols
  * 输出：无，不修改棋盘；上方留一条状态区，其余空间尽量分给卡牌
@@ -361,6 +439,7 @@ static GameLayout getGameLayout(void)
     layout.cardWidth = (width - margin * 2 - (cols - 1) * layout.gap) / cols;
     layout.cardHeight = (availableHeight - (rows - 1) * layout.gap) / rows;
     layout.backButton = (Rectangle){layout.left + width - margin * 2 - 90, 10, 90, 36};
+    layout.revealButton = (Rectangle){layout.backButton.x - 100, 10, 90, 36};
     // 取两个方向能容纳的较小边长，保证卡牌为正方形
     if (layout.cardWidth < layout.cardHeight) {
         layout.cardHeight = layout.cardWidth;
@@ -377,13 +456,12 @@ static GameLayout getGameLayout(void)
 
 /*
  * 功能：计算指定卡牌的实际矩形，绘制和点击判断共用此函数
- * 输入：row、col 为有效行列下标
+ * 输入：layout 为本帧计算的布局，row、col 为有效行列下标
  * 输出：无
  * 返回值：使用动态卡牌大小和间距计算的矩形
  */
-static Rectangle cardBounds(int row, int col)
+static Rectangle cardBounds(GameLayout layout, int row, int col)
 {
-    GameLayout layout = getGameLayout();
     return (Rectangle){layout.left + col * (layout.cardWidth + layout.gap),
                        layout.top + row * (layout.cardHeight + layout.gap),
                        layout.cardWidth, layout.cardHeight};
