@@ -59,6 +59,94 @@ static const char UI_GLYPHS[] =
     ".:-+/()%#";
 
 /*
+ * 功能：校验字体文件结构是否完整
+ * 输入：path 是字体文件路径
+ * 输出：不修改任何状态
+ * 返回值：1 可以交给 raylib 加载，0 文件不是字体或被截断
+ *
+ * 为什么要自己查？
+ * raylib 内部用 stb_truetype 解析字体。遇到完全无效的文件（随便改名的图片）
+ * 它会直接崩溃；遇到被截断的字体（下载不完整）也可能崩溃。
+ * 两种都会让程序直接退出，所以加载前先用标准库把文件结构看一遍：
+ *   1. 前 4 字节必须是字体签名
+ *   2. 头部的"表数量"必须合理
+ *   3. 每张表声明的偏移 + 长度不能超出文件大小（截断就靠这条查出来）
+ *   4. 必须含 cmap 表，否则查不到字符
+ */
+static int fontFileLooksValid(const char *path)
+{
+    FILE *fp;
+    unsigned char buf[12];
+    unsigned char rec[16];
+    long fileSize;
+    unsigned int tag;
+    unsigned int numTables;
+    unsigned int i;
+    int hasCmap = 0;
+
+    fp = fopen(path, "rb");
+    if (fp == NULL) return 0;
+
+    // 先量出文件大小，后面判断表有没有越界要用
+    if (fseek(fp, 0L, SEEK_END) != 0) { fclose(fp); return 0; }
+    fileSize = ftell(fp);
+    if (fileSize < 12) { fclose(fp); return 0; }
+    rewind(fp);
+
+    // 读文件头前 12 个字节
+    if (fread(buf, 1, 12, fp) != 12) { fclose(fp); return 0; }
+
+    tag = ((unsigned int)buf[0] << 24) | ((unsigned int)buf[1] << 16) |
+          ((unsigned int)buf[2] << 8) | (unsigned int)buf[3];
+
+    if (tag == 0x74746366u)
+    {
+        // 'ttcf' 字体集合：结构复杂，这里只做基本判断，交给 raylib
+        fclose(fp);
+        return (fileSize > 1024) ? 1 : 0;
+    }
+
+    if (!(tag == 0x00010000u || tag == 0x4F54544Fu || tag == 0x74727565u))
+    {
+        fclose(fp);
+        return 0;    // 不是常见字体签名
+    }
+
+    numTables = ((unsigned int)buf[4] << 8) | (unsigned int)buf[5];
+
+    if (numTables == 0 || numTables > 64)
+    {
+        fclose(fp);
+        return 0;    // 表数量明显不合理
+    }
+
+    // 逐张表检查：偏移 + 长度不能超过文件大小
+    for (i = 0; i < numTables; i++)
+    {
+        unsigned int off;
+        unsigned int len;
+
+        if (fread(rec, 1, 16, fp) != 16) { fclose(fp); return 0; }
+
+        off = ((unsigned int)rec[8] << 24) | ((unsigned int)rec[9] << 16) |
+              ((unsigned int)rec[10] << 8) | (unsigned int)rec[11];
+        len = ((unsigned int)rec[12] << 24) | ((unsigned int)rec[13] << 16) |
+              ((unsigned int)rec[14] << 8) | (unsigned int)rec[15];
+
+        if (len > 0 && (long)off + (long)len > fileSize)
+        {
+            fclose(fp);
+            return 0;    // 表越界，说明文件被截断
+        }
+
+        if (rec[0] == 'c' && rec[1] == 'm' && rec[2] == 'a' && rec[3] == 'p') hasCmap = 1;
+    }
+
+    fclose(fp);
+    return hasCmap;
+}
+
+/*
  * 功能：把一串 UTF-8 文字拆成"去重后"的码点数组
  * 输入：text 为文字，out 为输出数组，max 为数组容量
  * 输出：out 中写入去重后的码点
@@ -132,6 +220,13 @@ int loadUiResources(Font *font)
         return 0;
     }
 
+    // 再检查文件头：完全无效的文件会让 raylib 内部崩溃，必须在加载前拦下来
+    if (!fontFileLooksValid(UI_FONT_PATH))
+    {
+        TraceLog(LOG_ERROR, "UI: not a valid ttf/otf file: %s", UI_FONT_PATH);
+        return 0;
+    }
+
     count = buildCodepoints(UI_GLYPHS, codepoints, UI_CODEPOINT_MAX);
     if (count <= 0)
     {
@@ -162,12 +257,14 @@ int loadUiResources(Font *font)
     // 双线性过滤：字被放大缩小时边缘更平滑，不会一格一格的
     SetTextureFilter(loaded.texture, TEXTURE_FILTER_BILINEAR);
 
-    // 检查有没有缺字
-    // raylib 遇到字体里没有的码点不会报错，只会让它画成乱码，
-    // 所以这里主动对一遍：requested 的每个码点，是否真的进了 font.glyphs
-    // 注意不能用 GetGlyphIndex() == 0 来判断，因为 0 号槽位也可能放着真实的字
+    // 检查字形是否真的加载成功
+    // raylib 在字体文件损坏、读不出来时会静默回退到自带的默认字体：
+    // 返回的 Font 依然有 texture.id 和 glyphCount，看不出异常，
+    // 但默认字体只有 ASCII，中文全部缺失，界面上会变成乱码或空白
+    // 所以必须自己核对：请求的每个码点，是否真的进了 loaded.glyphs
     {
-        int missing = 0;
+        int missing = 0;        // 缺失的码点总数
+        int missingCjk = 0;     // 其中缺失的中文字符数
         int shown = 0;
         int a;
         int b;
@@ -189,6 +286,9 @@ int loadUiResources(Font *font)
             {
                 missing++;
 
+                // 常用汉字区间 U+4E00 ~ U+9FFF
+                if (codepoints[a] >= 0x4E00 && codepoints[a] <= 0x9FFF) missingCjk++;
+
                 if (shown < 10)
                 {
                     TraceLog(LOG_WARNING, "  missing codepoint %d (U+%04X)", codepoints[a], codepoints[a]);
@@ -199,7 +299,18 @@ int loadUiResources(Font *font)
 
         if (missing > 0)
         {
-            TraceLog(LOG_WARNING, "UI: %d glyphs missing, add them to UI_GLYPHS", missing);
+            TraceLog(LOG_WARNING, "UI: %d glyphs missing, check UI_GLYPHS and the font file", missing);
+        }
+
+        // 缺中文说明字体不合格（最常见的原因是加载失败后回退了默认字体）
+        // 这种情况下必须报失败，不能把"能画英文"当成"中文可用"
+        if (missingCjk > 0 || missing >= count)
+        {
+            TraceLog(LOG_ERROR, "UI: %d Chinese glyphs missing, font rejected (fallback or wrong font)",
+                     missingCjk);
+
+            UnloadFont(loaded);    // 自己申请的字体自己释放
+            return 0;
         }
     }
 
