@@ -29,7 +29,12 @@ static const char symbols[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "abcdefghijklmnopqrstuvwxyz"
     "1234567890";
-static const Rectangle returnButton = {300, 550, 200, 36};
+// 每次根据窗口和棋盘计算，不再固定卡牌宽高和间距
+typedef struct {
+    float left, top;
+    float cardWidth, cardHeight, gap;
+    Rectangle backButton;
+} GameLayout;
 
 // 初始化、洗牌、配对和通关判断
 static void initBoard(int level);
@@ -37,6 +42,7 @@ static void shuffleBoard(void);
 static int checkMatch(void);
 static int isFinished(void);
 // 同一套坐标用于绘制和鼠标判断
+static GameLayout getGameLayout(void);
 static Rectangle cardBounds(int row, int col);
 static void drawCardPicture(Texture2D picture, Rectangle bounds);
 
@@ -121,7 +127,7 @@ int updateGame(int *seconds)
         return 1;
     }
     // 亮牌和等待盖回期间，仍然可以退出
-    if (isButtonClicked(returnButton)) {
+    if (isButtonClicked(getGameLayout().backButton)) {
         phase = GAME_EXITED;
         return 2;
     }
@@ -193,8 +199,10 @@ void drawGame(Font font)
     Color fill;
     const char *label;
     Vector2 size;
+    GameLayout layout = getGameLayout();
+    float textSize;
     DrawTextEx(font, TextFormat("Level %d - %d x %d", currentLevel, rows, cols),
-               (Vector2){30, 24}, 28, 1, DARKGRAY);
+               (Vector2){-getUiCamera().offset.x / getUiCamera().zoom + 10, 8}, 18, 1, DARKGRAY);
     if (phase == GAME_PREVIEW) {
         remaining = (int)(previewEnd - GetTime() + 0.999999);
         if (remaining < 0) remaining = 0;
@@ -204,7 +212,7 @@ void drawGame(Font font)
     } else {
         label = TextFormat("Time: %d s   Select: %d / %d", elapsedSeconds, count, groupSize);
     }
-    DrawTextEx(font, label, (Vector2){30, 70}, 22, 1, DARKGRAY);
+    DrawTextEx(font, label, (Vector2){-getUiCamera().offset.x / getUiCamera().zoom + 10, 32}, 16, 1, DARKGRAY);
     for (r = 0; r < rows; r++) {
         for (c = 0; c < cols; c++) {
             bounds = cardBounds(r, c);
@@ -218,17 +226,20 @@ void drawGame(Font font)
                     drawCardPicture(faces[cards[r][c]], bounds);
                 } else {
                     label = TextFormat("%c", symbols[cards[r][c]]);
-                    size = MeasureTextEx(font, label, 26, 1);
+                    // 字符随卡牌一起变大，并始终居中
+                    textSize = (bounds.width < bounds.height ? bounds.width : bounds.height) * 0.62f;
+                    size = MeasureTextEx(font, label, textSize, 1);
                     DrawTextEx(font, label,
-                        (Vector2){bounds.x + (bounds.width - size.x) / 2, bounds.y + 17},
-                        26, 1, DARKGRAY);
+                        (Vector2){bounds.x + (bounds.width - size.x) / 2,
+                                  bounds.y + (bounds.height - size.y) / 2},
+                        textSize, 1, DARKGRAY);
                 }
             }
             DrawRectangleLinesEx(bounds, state[r][c] == 2 ? 3.0f : 1.0f,
                                  state[r][c] == 2 ? DARKGREEN : GRAY);
         }
     }
-    drawButton(returnButton, "返回", font);
+    drawButton(layout.backButton, "返回", font);
 }
 
 /*
@@ -326,15 +337,56 @@ static int isFinished(void)
 }
 
 /*
- * 功能：计算卡牌矩形，使各难度棋盘水平居中
- * 输入：row、col 为从 0 开始的有效行列下标
+ * 功能：根据窗口大小和行列数分配棋盘区域
+ * 输入：使用当前窗口尺寸和本局 rows、cols
+ * 输出：无，不修改棋盘；上方留一条状态区，其余空间尽量分给卡牌
+ * 返回值：卡牌宽高、间距、起点和右上角返回按钮的区域
+ */
+static GameLayout getGameLayout(void)
+{
+    Camera2D camera = getUiCamera();
+    GameLayout layout;
+    // 相机为其他页面留出的两侧空白，在游戏页也用来摆牌
+    float width = GetScreenWidth() / camera.zoom;
+    float height = GetScreenHeight() / camera.zoom;
+    float margin = 10;
+    float boardTop = 62;
+    float availableHeight = height - boardTop - margin;
+
+    layout.gap = availableHeight / 90;
+    if (layout.gap < 4) layout.gap = 4;
+    if (layout.gap > 10) layout.gap = 10;
+    layout.left = -camera.offset.x / camera.zoom + margin;
+    layout.top = boardTop;
+    layout.cardWidth = (width - margin * 2 - (cols - 1) * layout.gap) / cols;
+    layout.cardHeight = (availableHeight - (rows - 1) * layout.gap) / rows;
+    layout.backButton = (Rectangle){layout.left + width - margin * 2 - 90, 10, 90, 36};
+    // 取两个方向能容纳的较小边长，保证卡牌为正方形
+    if (layout.cardWidth < layout.cardHeight) {
+        layout.cardHeight = layout.cardWidth;
+    } else {
+        layout.cardWidth = layout.cardHeight;
+    }
+    // 状态栏位置不变，正方形棋盘在下方可用区域中居中
+    layout.left += (width - margin * 2 -
+                   (cols * layout.cardWidth + (cols - 1) * layout.gap)) / 2;
+    layout.top += (availableHeight -
+                  (rows * layout.cardHeight + (rows - 1) * layout.gap)) / 2;
+    return layout;
+}
+
+/*
+ * 功能：计算指定卡牌的实际矩形，绘制和点击判断共用此函数
+ * 输入：row、col 为有效行列下标
  * 输出：无
- * 返回值：该张牌的屏幕区域
+ * 返回值：使用动态卡牌大小和间距计算的矩形
  */
 static Rectangle cardBounds(int row, int col)
 {
-    float width = cols * 60.0f + (cols - 1) * 8.0f;
-    return (Rectangle){(800 - width) / 2 + col * 68, 125 + row * 68.0f, 60, 60};
+    GameLayout layout = getGameLayout();
+    return (Rectangle){layout.left + col * (layout.cardWidth + layout.gap),
+                       layout.top + row * (layout.cardHeight + layout.gap),
+                       layout.cardWidth, layout.cardHeight};
 }
 
 /*
@@ -345,8 +397,9 @@ static Rectangle cardBounds(int row, int col)
  */
 static void drawCardPicture(Texture2D picture, Rectangle bounds)
 {
-    float sx = (bounds.width - 6) / picture.width;
-    float sy = (bounds.height - 6) / picture.height;
+    float padding = (bounds.width < bounds.height ? bounds.width : bounds.height) * 0.08f;
+    float sx = (bounds.width - padding * 2) / picture.width;
+    float sy = (bounds.height - padding * 2) / picture.height;
     float scale = sx < sy ? sx : sy;
     Rectangle dest = {bounds.x + (bounds.width - picture.width * scale) / 2,
                       bounds.y + (bounds.height - picture.height * scale) / 2,

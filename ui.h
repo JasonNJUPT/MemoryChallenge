@@ -35,4 +35,12 @@ int isButtonClicked(Rectangle bounds);
  */
 void drawButton(Rectangle bounds, const char text[], Font font);
 
+/*
+ * 功能：计算原 800x600 布局到当前窗口的等比例放大和居中位置
+ * 输入：无，读取当前窗口尺寸
+ * 输出：无，不改变鼠标或绘制状态
+ * 返回值：供主画面和输入框裁剪共同使用的二维相机
+ */
+Camera2D getUiCamera(void);
+
 #endif
