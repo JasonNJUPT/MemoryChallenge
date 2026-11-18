@@ -5,19 +5,23 @@
 #include "ui.h"
 #include "rank.h"
 #include "account.h"
+#include "game.h"
 
 // 页面编号只由主函数管理，其他模块通过返回值通知主函数
 typedef enum {
+    PAGE_ENTRY,
+    PAGE_ACCOUNT,
     PAGE_MENU,
     PAGE_LEVEL,
-    PAGE_PENDING,
-    PAGE_ACCOUNT,
+    PAGE_GAME,
+    PAGE_RESULT,
     PAGE_RANK
 } Page;
 
 // 三行菜单：账号、游戏、排行榜
 static const Rectangle loginButton = {180, 180, 200, 48};
 static const Rectangle registerButton = {420, 180, 200, 48};
+static const Rectangle switchButton = {180, 180, 440, 48};
 static const Rectangle gameButton = {180, 260, 440, 48};
 static const Rectangle rankButton = {180, 340, 440, 48};
 static const Rectangle exitButton = {300, 460, 200, 48};
@@ -28,26 +32,27 @@ static int loadMainFont(Font *font);
 // 在窗口中居中绘制一行文字
 static void drawCentered(Font font, const char text[], float y, float size);
 // 绘制主菜单
-static void drawMenu(Font font);
+static void drawMenu(Font font, int loggedIn);
 // 绘制难度选择页
 static void drawLevels(Font font);
 
 /*
  * 功能：创建图形窗口，处理菜单、难度选择和排行榜页面
  * 输入：无参数，通过鼠标选择页面
- * 输出：图形主流程与账号页；游戏尚未接入时显示明确提示，不生成成绩
+ * 输出：登录后的游戏、结算和排行榜，通关后保存一次成绩
  * 返回值：0 正常退出，1 窗口或字体初始化失败
  */
 int main(void)
 {
     Font font = {0};
-    Page page = PAGE_MENU;
+    Page page = PAGE_ENTRY;
     User user = {0};
     int accountResult;
     int running = 1;
     int level = 0;
-    const char *pendingTitle = "";
-    const char *pendingMessage = "";
+    int seconds = 0;
+    int gameResult;
+    int saveResult = 0;
     Rectangle levelButton;
     int i;
 
@@ -64,16 +69,46 @@ int main(void)
         return 1;
     }
 
+    if (!loadGameResources()) {
+        TraceLog(LOG_ERROR, "Card resources are incomplete or invalid");
+        unloadUiResources(font);
+        CloseWindow();
+        return 1;
+    }
+
     while (running && !WindowShouldClose()) {
+        // 所有玩家页面都要求登录成功
+        if (page != PAGE_ENTRY && page != PAGE_ACCOUNT && user.name[0] == '\0') {
+            page = PAGE_ENTRY;
+        }
         // 每帧只更新一个页面，切换后不会重复处理同一次点击
         switch (page) {
-            case PAGE_MENU:
+            case PAGE_ENTRY:
                 if (isButtonClicked(loginButton)) {
                     resetAccountPage(0);
                     page = PAGE_ACCOUNT;
                 } else if (isButtonClicked(registerButton)) {
                     resetAccountPage(1);
                     page = PAGE_ACCOUNT;
+                } else if (isButtonClicked(exitButton)) {
+                    running = 0;
+                }
+                break;
+
+            case PAGE_ACCOUNT:
+                accountResult = updateAccountPage(&user);
+                if (accountResult == 1) {
+                    page = PAGE_MENU;
+                } else if (accountResult == 2) {
+                    page = PAGE_ENTRY;
+                }
+                break;
+
+            case PAGE_MENU:
+                if (isButtonClicked(switchButton)) {
+                    user = (User){0};
+                    level = 0;
+                    page = PAGE_ENTRY;
                 } else if (isButtonClicked(gameButton)) {
                     page = PAGE_LEVEL;
                 } else if (isButtonClicked(rankButton)) {
@@ -84,21 +119,14 @@ int main(void)
                 }
                 break;
 
-            case PAGE_ACCOUNT:
-                accountResult = updateAccountPage(&user);
-                if (accountResult == 1 || accountResult == 2) {
-                    page = PAGE_MENU;
-                }
-                break;
-
             case PAGE_LEVEL:
                 for (i = 0; i < 3; i++) {
                     levelButton = (Rectangle){250, 180 + i * 80.0f, 300, 48};
                     if (isButtonClicked(levelButton)) {
                         level = i + 1;
-                        pendingTitle = "开始游戏";
-                        pendingMessage = "Game GUI is not connected. No game or score is created.";
-                        page = PAGE_PENDING;
+                        if (startGame(level)) {
+                            page = PAGE_GAME;
+                        }
                         break;
                     }
                 }
@@ -107,10 +135,23 @@ int main(void)
                 }
                 break;
 
-            case PAGE_PENDING:
+            case PAGE_GAME:
+                gameResult = updateGame(&seconds);
+                if (gameResult == 1) {
+                    // 只在通关这一刻提交一次，不在结算页反复写文件
+                    saveResult = saveScore(user.name, level, seconds);
+                    page = PAGE_RESULT;
+                } else if (gameResult == 2) {
+                    page = PAGE_MENU;
+                }
+                break;
+
+            case PAGE_RESULT:
                 if (isButtonClicked(backButton)) {
                     page = PAGE_MENU;
-                    level = 0;
+                } else if (isButtonClicked(rankButton)) {
+                    resetRankPage();
+                    page = PAGE_RANK;
                 }
                 break;
 
@@ -124,25 +165,28 @@ int main(void)
         BeginDrawing();
         ClearBackground((Color){245, 248, 252, 255});
         switch (page) {
-            case PAGE_MENU:
-                drawMenu(font);
-                if (user.name[0] != '\0') {
-                    drawCentered(font, TextFormat("User: %s", user.name), 125, 20);
-                }
+            case PAGE_ENTRY:
+                drawMenu(font, 0);
                 break;
             case PAGE_ACCOUNT:
                 drawAccountPage(font);
                 break;
+            case PAGE_MENU:
+                drawMenu(font, 1);
+                drawCentered(font, TextFormat("User: %s", user.name), 125, 20);
+                break;
             case PAGE_LEVEL:
                 drawLevels(font);
                 break;
-            case PAGE_PENDING:
-                drawCentered(font, pendingTitle, 100, 36);
-                drawCentered(font, "图形化演示", 200, 26);
-                drawCentered(font, pendingMessage, 275, 16);
-                if (level != 0) {
-                    drawCentered(font, TextFormat("Selected level: %d", level), 325, 20);
-                }
+            case PAGE_GAME:
+                drawGame(font);
+                break;
+            case PAGE_RESULT:
+                drawCentered(font, "恭喜通关", 90, 36);
+                drawCentered(font, TextFormat("Time: %d s", seconds), 180, 28);
+                drawCentered(font, saveResult == 1 ? "成绩已保存" :
+                    saveResult == 0 ? "未刷新成绩" : "成绩保存失败", 240, 24);
+                drawButton(rankButton, "排行榜", font);
                 drawButton(backButton, "返回", font);
                 break;
             case PAGE_RANK:
@@ -152,6 +196,7 @@ int main(void)
         EndDrawing();
     }
 
+    unloadGameResources();
     unloadUiResources(font);
     CloseWindow();
     return 0;
@@ -167,7 +212,7 @@ static int loadMainFont(Font *font)
 {
     const char *fontPath = "C:/Windows/Fonts/simhei.ttf";
     const char *glyphs =
-        "三上两个为于仍以位使修包及只号后含和字少尚强或换改有检法空符类置能英被要设该账足达量限"
+        "切三上两个为于仍以位使修包及只号后含和字少尚强或换改有检法空符类置能英被要设该账足达量限"
         "记忆力大考验排行榜初级中级高级返回名次用户名用时秒暂无成绩文件读取失败"
         "写入测试成绩查看退出开始游戏分数恭喜通过再来一局主菜单登录注册密码"
         "点击选择难度卡牌配对准成功剩余时间连击错误提示保存读取加载关闭窗口"
@@ -215,19 +260,24 @@ static void drawCentered(Font font, const char text[], float y, float size)
 
 /*
  * 功能：绘制三行主菜单和退出按钮
- * 输入：font 为中文字体
- * 输出：主菜单及当前开发状态提示
+ * 输入：font 为中文字体，loggedIn 为 0 显示登录入口，为 1 显示玩家菜单
+ * 输出：登录入口或当前玩家的主菜单
  * 返回值：无
  */
-static void drawMenu(Font font)
+static void drawMenu(Font font, int loggedIn)
 {
     drawCentered(font, "记忆力大考验", 70, 40);
-    drawButton(loginButton, "登录", font);
-    drawButton(registerButton, "注册", font);
-    drawButton(gameButton, "开始游戏", font);
-    drawButton(rankButton, "排行榜", font);
+    if (loggedIn) {
+        drawButton(switchButton, "切换账号", font);
+        drawButton(gameButton, "开始游戏", font);
+        drawButton(rankButton, "排行榜", font);
+    } else {
+        drawButton(loginButton, "登录", font);
+        drawButton(registerButton, "注册", font);
+        drawCentered(font, "请先登录", 285, 24);
+    }
     drawButton(exitButton, "退出", font);
-    drawCentered(font, "GUI preview - game integration pending", 550, 16);
+    drawCentered(font, "GUI preview - account and game integration pending", 550, 16);
 }
 
 /*

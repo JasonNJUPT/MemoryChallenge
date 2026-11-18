@@ -1,356 +1,356 @@
-#include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
-#include <windows.h>  // Sleep£ºWindows Ë¯Ãßº¯Êı
 #include "game.h"
+#include "ui.h"
 
+// æ£‹ç›˜æ•°æ®åªç”±æœ¬æ¨¡å—ä½¿ç”¨ï¼Œå…¶ä»–æ¨¡å—é€šè¿‡æ¥å£å–å¾—æ¸¸æˆç»“æœ
+static int cards[6][6];
+static int state[6][6];  // 0 ç›–ä½ï¼Œ1 æœ¬è½®ç¿»å¼€ï¼Œ2 å·²é…å¯¹
+static int selectedRows[3], selectedCols[3];
+static int rows, cols, count, groupSize;
+static int currentLevel, elapsedSeconds;
+static double previewEnd, startTime, hideTime;
 
+typedef enum {
+    GAME_IDLE,
+    GAME_PREVIEW,
+    GAME_SELECT,
+    GAME_WAIT,
+    GAME_FINISHED,
+    GAME_EXITED
+} GamePhase;
+static GamePhase phase = GAME_IDLE;
 
-// ÄÚ²¿º¯ÊıÉùÃ÷
-// ÏÔÊ¾ÆåÅÌ
-void showBoard(int cards[6][6], int state[6][6],
-                      int rows, int cols);
+static Texture2D faces[12];
+static Texture2D back;
+static int usePictures = 0;
+// ç¼–å·åªç”¨æ¥é…å¯¹ï¼›æ²¡æœ‰å›¾ç‰‡æ—¶æŒ‰ç¼–å·æ˜¾ç¤ºåŸç»ˆç«¯ç‰ˆå­—ç¬¦
+static const char symbols[] =
+    "!@#$%^&()-_=+[]{};:,.<>/?|~`"
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    "abcdefghijklmnopqrstuvwxyz"
+    "1234567890";
+static const Rectangle returnButton = {300, 550, 200, 36};
 
-// ³õÊ¼»¯ÅÆÃæºÍ×´Ì¬
-void initBoard(int cards[6][6], int state[6][6],
-                      int level, int *rows, int *cols);
-
-// Ëæ»ú´òÂÒÅÆÃæ
-void shuffleBoard(int cards[6][6], int rows, int cols);
-
-// ÊäÈë²¢¼ì²éÑ¡ÅÆ×ø±ê
-int chooseCard(int state[6][6], int rows, int cols,
-                      int *row, int *col);
-
-// ÅĞ¶ÏËùÑ¡ÅÆÊÇ·ñÏàÍ¬
-int checkMatch(int cards[6][6], int selectedRows[],
-                      int selectedCols[], int count);
-
-// ÅĞ¶ÏÊÇ·ñÈ«²¿Åä¶Ô
-int isFinished(int state[6][6], int rows, int cols);
-
-// ¿ª¾ÖÕ¹Ê¾ÅÆÃæ£¬È»ºó¸ÇÅÆ
-void previewBoard(int cards[6][6], int state[6][6],
-                         int rows, int cols, int seconds);
-
+// åˆå§‹åŒ–ã€æ´—ç‰Œã€é…å¯¹å’Œé€šå…³åˆ¤æ–­
+static void initBoard(int level);
+static void shuffleBoard(void);
+static int checkMatch(void);
+static int isFinished(void);
+// åŒä¸€å¥—åæ ‡ç”¨äºç»˜åˆ¶å’Œé¼ æ ‡åˆ¤æ–­
+static Rectangle cardBounds(int row, int col);
+static void drawCardPicture(Texture2D picture, Rectangle bounds);
 
 /*
- * ¹¦ÄÜ£ºÏÔÊ¾´øĞĞºÅ¡¢ÁĞºÅµÄÆåÅÌ
- * ÊäÈë£ºcards ´æÅÆÃæ£¬state ´æÅÆµÄ×´Ì¬£¬rows¡¢cols ÊÇ±¾¾ÖĞĞÁĞÊı
- * Êä³ö£º¸Ç×¡µÄÅÆÏÔÊ¾ *£¬ÆäËûÅÆ°´±àºÅÏÔÊ¾×Ö·û£»²»ĞŞ¸ÄÊı×é
- * ·µ»ØÖµ£ºÎŞ
+ * åŠŸèƒ½ï¼šåŠ è½½ 12 ç§æ­£é¢å’Œå¡èƒŒï¼Œçª—å£åˆ›å»ºåè°ƒç”¨ä¸€æ¬¡
+ * è¾“å…¥ï¼šæ— ï¼Œè¯»å– assets/cards ä¸­ back.png å’Œ 00.png åˆ° 11.png
+ * è¾“å‡ºï¼šä¿å­˜å›¾ç‰‡ï¼›å®Œå…¨æ²¡æœ‰å¡ç‰Œèµ„æºæ—¶é‡‡ç”¨å­—ç¬¦å¡ç‰Œ
+ * è¿”å›å€¼ï¼š1 å¯æ­£å¸¸æ¸¸æˆï¼Œ0 å›¾ç‰‡ä¸å®Œæ•´æˆ–åŠ è½½å¤±è´¥ï¼Œå¤±è´¥æ—¶é‡Šæ”¾éƒ¨åˆ†èµ„æº
  */
-void showBoard(int cards[6][6], int state[6][6],
-               int rows, int cols)
+int loadGameResources(void)
 {
-    int i, j;
-    /* ÅÆÃæ±àºÅºÍ×Ö·ûÏÂ±ê¶¼´Ó 0 ¿ªÊ¼£¬ÏÔÊ¾Ê±Ö±½Ó²é±í
-     * Ô¤ÁôÊı×Ö¡¢´óĞ¡Ğ´×ÖÄ¸ºÍ³£¼û·ûºÅ£¬¹² 90 ÖÖ
-     * * ×¨ÃÅ±íÊ¾¸ÇÅÆ£¬²»ÄÜ×÷ÎªÅÆÃæ£»¿Õ¸ñÒ²²»×÷ÎªÅÆÃæ
-     * ¿ÉÒÔĞŞ¸Ä»ò×·¼ÓÏÂÃæµÄ×Ö·û£¬³õÊ¼»¯ºÍÅä¶ÔÈÔÊ¹ÓÃÊı×Ö±àºÅ
-     */
-    const char symbols[] =
-        "!@#$%^&()-_=+[]{};:,.<>/?|~`"
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz"
-        "1234567890";
-
-    // ÁĞºÅ·ÅÔÚºáÏßµÄÉÏÃæ£¬ÓëÏÂÃæµÄÅÆÃæ·Ö¿ª
-    printf("    |");
-    for (j = 0; j < cols; j++) {
-        printf("%4d", j + 1);
-    }
-    printf("\n----+");
-    for (j = 0; j < cols; j++) {
-        printf("----");
-    }
-    printf("\n");
-
-    // ĞĞºÅ·ÅÔÚÊúÏß×ó±ß£¬ÅÆÃæ·ÅÔÚÊúÏßÓÒ±ß
-    for (i = 0; i < rows; i++) {
-        printf("%4d|", i + 1);
-        for (j = 0; j < cols; j++) {
-            if (state[i][j] == 0) {
-                printf("%4s", "*");  // ¸Ç×¡µÄÅÆ
-            } else {
-                printf("%4c", symbols[cards[i][j]]);  // °´±àºÅ²é×Ö·û
-            }
+    int i;
+    int anyPicture = FileExists("assets/cards/back.png");
+    unloadGameResources();
+    for (i = 0; i < 12; i++) {
+        if (FileExists(TextFormat("assets/cards/%02d.png", i))) {
+            anyPicture = 1;
         }
-        printf("\n");
     }
+    if (!anyPicture) {
+        return 1;
+    }
+
+    back = LoadTexture("assets/cards/back.png");
+    if (!IsTextureValid(back)) {
+        unloadGameResources();
+        return 0;
+    }
+    for (i = 0; i < 12; i++) {
+        faces[i] = LoadTexture(TextFormat("assets/cards/%02d.png", i));
+        if (!IsTextureValid(faces[i])) {
+            unloadGameResources();
+            return 0;
+        }
+    }
+    usePictures = 1;
+    return 1;
 }
 
 /*
- * ¹¦ÄÜ£º°´ÄÑ¶ÈÉú³ÉÅÆÃæ²¢³õÊ¼»¯×´Ì¬
- * ÊäÈë£ºlevel Îª 1¡¢2¡¢3£»cards¡¢state ½ÓÊÕÊı¾İ£¬rows¡¢cols ÊÇ½ÓÊÕĞĞÁĞÊıµÄµØÖ·
- * Êä³ö£ºĞ´Èë cards£¬½« state È«²¿ÉèÎª 0£¬Í¨¹ı *rows¡¢*cols ´ø»ØĞĞÁĞÊı
- *       ³õ¡¢ÖĞ¼¶Ã¿ÖÖÅÆÁ½ÕÅ£¬¸ß¼¶ÈıÕÅ£»ÄÑ¶ÈÎŞĞ§Ê±ĞĞÁĞÊıÎª 0
- * ·µ»ØÖµ£ºÎŞ
+ * åŠŸèƒ½ï¼šå¼€å§‹æ–°çš„ä¸€å±€ï¼Œé‡ç½®æ£‹ç›˜ã€æ—¶é—´å’Œé€‰ç‰Œè®°å½•
+ * è¾“å…¥ï¼šlevel ä¸º 1 åˆçº§ã€2 ä¸­çº§ã€3 é«˜çº§
+ * è¾“å‡ºï¼šç”Ÿæˆå¹¶æ‰“ä¹±æ£‹ç›˜ï¼Œè¿›å…¥äº®ç‰Œé˜¶æ®µï¼›æ— æ•ˆéš¾åº¦è¿›å…¥æœªå¼€å§‹çŠ¶æ€
+ * è¿”å›å€¼ï¼š1 æˆåŠŸï¼Œ0 éš¾åº¦æ— æ•ˆ
  */
-void initBoard(int cards[6][6], int state[6][6],
-               int level, int *rows, int *cols)
+int startGame(int level)
 {
-    int i, j;
-    int groupSize = 2;  // ³õ¡¢ÖĞ¼¶Á½ÕÅÒ»×é£¬¸ß¼¶¸ÄÎªÈıÕÅ
-    int number = 0;  // ÒÑ¾­ÌîÈëµÄÅÆÊı£¬´Ó 0 ¿ªÊ¼
+    int showSeconds;
+    phase = GAME_IDLE;
+    if (level < 1 || level > 3) {
+        return 0;
+    }
+    currentLevel = level;
+    initBoard(level);
+    shuffleBoard();
+    count = 0;
+    elapsedSeconds = 0;
+    startTime = 0;
+    hideTime = 0;
+    showSeconds = level == 1 ? 4 : level == 2 ? 6 : 8;
+    previewEnd = GetTime() + showSeconds;
+    phase = GAME_PREVIEW;
+    return 1;
+}
 
-    // ÏÈÇå¿ÕÕû¸öÊı×é£¬±ÜÃâ±£ÁôÉÏÒ»¾ÖµÄÅÆÃæºÍ×´Ì¬
-    for (i = 0; i < 6; i++) {
-        for (j = 0; j < 6; j++) {
-            cards[i][j] = 0;
-            state[i][j] = 0;
+/*
+ * åŠŸèƒ½ï¼šå¤„ç†æœ¬å¸§çš„é€‰ç‰Œã€ç›–ç‰Œå’Œé€šå…³ï¼Œä¸ç­‰å¾…è¾“å…¥æˆ–æš‚åœçª—å£
+ * è¾“å…¥ï¼šseconds æ˜¯æ¥æ”¶ç”¨æ—¶çš„åœ°å€ï¼Œé¼ æ ‡ç”± raylib è¯»å–
+ * è¾“å‡ºï¼šæ›´æ–°æ£‹ç›˜ï¼›åªæœ‰é€šå…³æ—¶æ‰å†™å…¥ *secondsï¼Œæ•´ç§’ç”¨æ—¶ä»å¼€å±€ç›–ç‰Œåè®¡ç®—
+ * è¿”å›å€¼ï¼š0 ç»§ç»­ï¼Œ1 é€šå…³ï¼Œ2 é€€å‡ºæˆ–å°šæœªå¼€å§‹
+ */
+int updateGame(int *seconds)
+{
+    int r, c, i;
+    double now = GetTime();
+
+    if (phase == GAME_IDLE || phase == GAME_EXITED) {
+        return 2;
+    }
+    if (phase == GAME_FINISHED) {
+        *seconds = elapsedSeconds;
+        return 1;
+    }
+    // äº®ç‰Œå’Œç­‰å¾…ç›–å›æœŸé—´ï¼Œä»ç„¶å¯ä»¥é€€å‡º
+    if (isButtonClicked(returnButton)) {
+        phase = GAME_EXITED;
+        return 2;
+    }
+    if (phase == GAME_PREVIEW) {
+        if (now >= previewEnd) {
+            startTime = now;
+            phase = GAME_SELECT;
+        }
+        return 0;  // åˆšç›–ç‰Œè¿™ä¸€å¸§ä¸åŒæ—¶æ¥æ”¶é€‰ç‰Œ
+    }
+
+    elapsedSeconds = (int)(now - startTime);
+    if (phase == GAME_WAIT) {
+        if (now >= hideTime) {
+            for (i = 0; i < count; i++) {
+                state[selectedRows[i]][selectedCols[i]] = 0;
+            }
+            count = 0;
+            phase = GAME_SELECT;
+        }
+        return 0;
+    }
+    if (!IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        return 0;
+    }
+    for (r = 0; r < rows; r++) {
+        for (c = 0; c < cols; c++) {
+            if (state[r][c] != 0 ||
+                !CheckCollisionPointRec(GetMousePosition(), cardBounds(r, c))) {
+                continue;
+            }
+            state[r][c] = 1;
+            selectedRows[count] = r;
+            selectedCols[count] = c;
+            count++;
+            if (count == groupSize) {
+                if (checkMatch()) {
+                    for (i = 0; i < count; i++) {
+                        state[selectedRows[i]][selectedCols[i]] = 2;
+                    }
+                    count = 0;
+                    if (isFinished()) {
+                        phase = GAME_FINISHED;
+                        *seconds = elapsedSeconds;
+                        return 1;
+                    }
+                } else {
+                    hideTime = now + 1.0;
+                    phase = GAME_WAIT;
+                }
+            }
+            return 0;  // ä¸€æ¬¡ç‚¹å‡»æœ€å¤šé€‰æ‹©ä¸€å¼ ç‰Œ
         }
     }
+    return 0;
+}
 
-    *rows = 0;
-    *cols = 0;
-    if (level == 1) {
-        *rows = 4;
-        *cols = 4;
-    } else if (level == 2) {
-        *rows = 4;
-        *cols = 5;
-    } else if (level == 3) {
-        *rows = 6;
-        *cols = 6;
-        groupSize = 3;
+/*
+ * åŠŸèƒ½ï¼šç»˜åˆ¶æ£‹ç›˜ã€é˜¶æ®µæç¤ºã€ç”¨æ—¶å’Œè¿”å›æŒ‰é’®
+ * è¾“å…¥ï¼šfont ä¸ºä¸»å‡½æ•°æä¾›çš„ä¸­æ–‡å­—ä½“
+ * è¾“å‡ºï¼šå½“å‰ç”»é¢ï¼Œä¸æ”¹å˜æ£‹ç›˜ã€é˜¶æ®µæˆ–è®¡æ—¶
+ * è¿”å›å€¼ï¼šæ— 
+ */
+void drawGame(Font font)
+{
+    int r, c;
+    int remaining;
+    Rectangle bounds;
+    Color fill;
+    const char *label;
+    Vector2 size;
+    DrawTextEx(font, TextFormat("Level %d - %d x %d", currentLevel, rows, cols),
+               (Vector2){30, 24}, 28, 1, DARKGRAY);
+    if (phase == GAME_PREVIEW) {
+        remaining = (int)(previewEnd - GetTime() + 0.999999);
+        if (remaining < 0) remaining = 0;
+        label = TextFormat("Remember the cards: %d s", remaining);
+    } else if (phase == GAME_WAIT) {
+        label = "Not a match - wait 1 second";
     } else {
-        return;  // ÄÑ¶È±àºÅÎŞĞ§£¬²»Éú³ÉÆåÅÌ
+        label = TextFormat("Time: %d s   Select: %d / %d", elapsedSeconds, count, groupSize);
     }
+    DrawTextEx(font, label, (Vector2){30, 70}, 22, 1, DARKGRAY);
+    for (r = 0; r < rows; r++) {
+        for (c = 0; c < cols; c++) {
+            bounds = cardBounds(r, c);
+            fill = state[r][c] == 2 ? (Color){200, 235, 210, 255} : WHITE;
+            if (phase != GAME_PREVIEW && state[r][c] == 0) {
+                DrawRectangleRec(bounds, (Color){75, 125, 185, 255});
+                if (usePictures) drawCardPicture(back, bounds);
+            } else {
+                DrawRectangleRec(bounds, fill);
+                if (usePictures) {
+                    drawCardPicture(faces[cards[r][c]], bounds);
+                } else {
+                    label = TextFormat("%c", symbols[cards[r][c]]);
+                    size = MeasureTextEx(font, label, 26, 1);
+                    DrawTextEx(font, label,
+                        (Vector2){bounds.x + (bounds.width - size.x) / 2, bounds.y + 17},
+                        26, 1, DARKGRAY);
+                }
+            }
+            DrawRectangleLinesEx(bounds, state[r][c] == 2 ? 3.0f : 1.0f,
+                                 state[r][c] == 2 ? DARKGREEN : GRAY);
+        }
+    }
+    drawButton(returnButton, "è¿”å›", font);
+}
 
-    // °´Ã¿×éÕÅÊıÉú³É±àºÅ£»Á½ÕÅÒ»×éÊ±Îª 0¡¢0¡¢1¡¢1¡­¡­
-    for (i = 0; i < *rows; i++) {
-        for (j = 0; j < *cols; j++) {
-            cards[i][j] = number / groupSize;
+/*
+ * åŠŸèƒ½ï¼šå…³é—­çª—å£å‰é‡Šæ”¾æ¸¸æˆå›¾ç‰‡ï¼Œä¹Ÿç”¨äºæ¸…ç†åŠ è½½å¤±è´¥çš„éƒ¨åˆ†èµ„æº
+ * è¾“å…¥ï¼šæ— 
+ * è¾“å‡ºï¼šé‡Šæ”¾å¹¶æ¸…é›¶çº¹ç†ï¼Œæ¢å¤å­—ç¬¦å¡ç‰Œæ¨¡å¼
+ * è¿”å›å€¼ï¼šæ— 
+ */
+void unloadGameResources(void)
+{
+    int i;
+    for (i = 0; i < 12; i++) {
+        if (faces[i].id != 0) UnloadTexture(faces[i]);
+        faces[i] = (Texture2D){0};
+    }
+    if (back.id != 0) UnloadTexture(back);
+    back = (Texture2D){0};
+    usePictures = 0;
+}
+
+/*
+ * åŠŸèƒ½ï¼šæŒ‰éš¾åº¦ç”Ÿæˆæœ‰åºç‰Œé¢å¹¶æ¸…ç©ºçŠ¶æ€
+ * è¾“å…¥ï¼šlevel ä¸ºå·²ç»æ£€æŸ¥æœ‰æ•ˆçš„éš¾åº¦
+ * è¾“å‡ºï¼šæ›´æ–°å†…éƒ¨æ•°ç»„ã€è¡Œåˆ—æ•°åŠæ¯ç»„å¼ æ•°
+ * è¿”å›å€¼ï¼šæ— 
+ */
+static void initBoard(int level)
+{
+    int r, c, number = 0;
+    rows = level == 3 ? 6 : 4;
+    cols = level == 1 ? 4 : level == 2 ? 5 : 6;
+    groupSize = level == 3 ? 3 : 2;
+    for (r = 0; r < 6; r++) {
+        for (c = 0; c < 6; c++) {
+            cards[r][c] = 0;
+            state[r][c] = 0;
+        }
+    }
+    for (r = 0; r < rows; r++) {
+        for (c = 0; c < cols; c++) {
+            cards[r][c] = number / groupSize;
             number++;
         }
     }
 }
 
 /*
- * ¹¦ÄÜ£ºËæ»ú´òÂÒÅÆµÄÎ»ÖÃ
- * ÊäÈë£ºcards ÊÇÅÆÃæÊı×é£¬rows¡¢cols ÊÇ±¾¾ÖĞĞÁĞÊı
- * Êä³ö£ºÖ±½Ó½»»» cards ÖĞµÄÅÆ£¬¸÷ÖÖÅÆµÄÊıÁ¿²»±ä
- * ·µ»ØÖµ£ºÎŞ
+ * åŠŸèƒ½ï¼šä»æœ€åä¸€å¼ å‘å‰éšæœºäº¤æ¢ç‰Œçš„ä½ç½®
+ * è¾“å…¥ï¼šä½¿ç”¨å†…éƒ¨æ£‹ç›˜å’Œè¡Œåˆ—æ•°
+ * è¾“å‡ºï¼šæ‰“ä¹± cardsï¼Œå„ç§ç‰Œçš„æ•°é‡ä¸å˜
+ * è¿”å›å€¼ï¼šæ— 
  */
-void shuffleBoard(int cards[6][6], int rows, int cols)
+static void shuffleBoard(void)
 {
     int i, j, temp;
-
-    /* °Ñ±¾¾ÖÆåÅÌ¿´³ÉÒ»ÅÅ£¬¹² rows * cols ÕÅÅÆ
-     * ´Ó×îºóÒ»ÕÅÏòÇ°´¦Àí£¬Ëæ»úÑ¡ÔñÉĞÎ´´¦ÀíµÄÅÆ½øĞĞ½»»»
-     */
     for (i = rows * cols - 1; i > 0; i--) {
-        j = rand() % (i + 1);  // Ëæ»úÎ»ÖÃÎª 0 µ½ i£¬ÔÊĞíÑ¡ÖĞ×Ô¼º
-
-        /* Ò»ÅÅÖĞµÄÎ»ÖÃ³ıÒÔÁĞÊıµÃµ½ĞĞÏÂ±ê£¬È¡ÓàµÃµ½ÁĞÏÂ±ê
-         * ÀıÈçÁĞÊıÎª 4 Ê±£¬Î»ÖÃ 6 ¶ÔÓ¦ cards[1][2]
-         */
-        temp = cards[i / cols][i % cols];//ÏÈ±£´æÎ»ÖÃ i µÄÅÆ£¬¹©ÏÂÃæ½»»»Ê¹ÓÃ
-        //½»»»
+        j = rand() % (i + 1);
+        temp = cards[i / cols][i % cols];
         cards[i / cols][i % cols] = cards[j / cols][j % cols];
         cards[j / cols][j % cols] = temp;
     }
 }
 
 /*
- * ¹¦ÄÜ£º¶ÁÈ¡²¢¼ì²éÍæ¼ÒÑ¡ÔñµÄÅÆ
- * ÊäÈë£ºstate ÊÇ×´Ì¬Êı×é£¬rows¡¢cols ÊÇĞĞÁĞÊı£¬row¡¢col ÊÇ½ÓÊÕ×ø±êµÄµØÖ·
- * Êä³ö£ºÓĞĞ§×ø±êÍ¨¹ı *row¡¢*col ´ø»Ø£¬»»ËãÎª´Ó 0 ¿ªÊ¼µÄÏÂ±ê
- *       Ô½½ç»òÒÑ·­¿ªµÄÅÆÒªÖØĞÂÑ¡Ôñ£¬ÕâÀï²»ĞŞ¸Ä state
- * ·µ»ØÖµ£º1 ±íÊ¾Ñ¡ÅÆ³É¹¦£»ÊäÈë 0 0¡¢ÊäÈë½áÊø»ò¸ñÊ½²»¶ÔÊ±·µ»Ø 0
+ * åŠŸèƒ½ï¼šåˆ¤æ–­æœ¬è½®æ‰€é€‰ç‰Œæ˜¯å¦å…¨éƒ¨ç›¸åŒ
+ * è¾“å…¥ï¼šä½¿ç”¨å·²è®°å½•çš„é€‰ç‰Œåæ ‡å’Œ count
+ * è¾“å‡ºï¼šä¸ä¿®æ”¹æ£‹ç›˜
+ * è¿”å›å€¼ï¼š1 ç›¸åŒï¼Œ0 ä¸åŒ
  */
-int chooseCard(int state[6][6], int rows, int cols,
-               int *row, int *col)
-{
-    int r, c;  // Íæ¼ÒÊäÈëµÄĞĞÁĞ±àºÅ£¬´Ó 1 ¿ªÊ¼
-
-    while (1) {
-        printf("ÇëÊäÈëĞĞºÅºÍÁĞºÅ£¨ÀıÈç 1 2£¬ÊäÈë 0 0 ÍË³ö£©£º");
-        if (scanf("%d %d", &r, &c) != 2) {
-            // Ã»¶Áµ½Á½¸öÕûÊı¾Í½áÊø±¾´ÎÑ¡ÅÆ
-            printf("ÊäÈë½áÊø»ò¸ñÊ½²»ÕıÈ·£¬½áÊøÑ¡Ôñ¡£\n");
-            return 0;
-        }
-        if (r == 0 && c == 0) {
-            return 0;
-        }
-
-        // ±ØĞëÏÈ¼ì²é·¶Î§£¬ÔÙ·ÃÎÊÊı×é£¬±ÜÃâÏÂ±êÔ½½ç
-        if (r < 1 || r > rows || c < 1 || c > cols) {
-            printf("Î»ÖÃÔ½½ç£¬ÇëÖØĞÂÑ¡Ôñ¡£\n");
-        } else if (state[r - 1][c - 1] == 1) {
-            printf("ÕâÕÅÅÆÒÑ¾­·­¿ª£¬ÇëÑ¡ÔñÆäËûÎ»ÖÃ¡£\n");
-        } else if (state[r - 1][c - 1] == 2) {
-            printf("ÕâÕÅÅÆÒÑ¾­Åä¶Ô£¬ÇëÑ¡ÔñÆäËûÎ»ÖÃ¡£\n");
-        } else {
-            // Ö»ÓĞÓĞĞ§Ñ¡Ôñ²Å°ÑÊı×éÏÂ±ê´ø»Ø£¬²»ĞŞ¸ÄÅÆµÄ×´Ì¬
-            *row = r - 1;
-            *col = c - 1;
-            return 1;
-        }
-    }
-}
-
-/*
- * ¹¦ÄÜ£º¼ì²é±¾ÂÖÑ¡ÖĞµÄÅÆÊÇ·ñÏàÍ¬
- * ÊäÈë£ºcards ÊÇÅÆÃæÊı×é£¬selectedRows¡¢selectedCols ´æËùÑ¡ÅÆµÄĞĞÁĞÏÂ±ê£¬count ÊÇÕÅÊı
- * Êä³ö£ºÖ»±È½ÏÅÆÃæ£¬²»ĞŞ¸ÄÊı×é£»µ÷ÓÃÇ°Òª±£Ö¤ÖÁÉÙÁ½ÕÅ¡¢×ø±êÓĞĞ§ÇÒ²»ÖØ¸´
- * ·µ»ØÖµ£ºÈ«²¿ÏàÍ¬·µ»Ø 1£¬·ñÔò·µ»Ø 0
- */
-int checkMatch(int cards[6][6], int selectedRows[],
-               int selectedCols[], int count)
+static int checkMatch(void)
 {
     int i;
-    int first;  // µÚÒ»ÕÅÅÆµÄ±àºÅ£¬×÷Îª±È½Ï¶ÔÏó
-
-    first = cards[selectedRows[0]][selectedCols[0]];
-
-    // ´ÓµÚ¶şÕÅ¿ªÊ¼£¬Ö»ÒªÓĞÒ»ÕÅ²»Í¬£¬¾Í²»ÊÇÒ»×éÏàÍ¬µÄÅÆ
+    int first = cards[selectedRows[0]][selectedCols[0]];
     for (i = 1; i < count; i++) {
-        if (cards[selectedRows[i]][selectedCols[i]] != first) {
-            return 0;
-        }
+        if (cards[selectedRows[i]][selectedCols[i]] != first) return 0;
     }
-    return 1;  // ËùÓĞÑ¡ÖĞµÄÅÆ¶¼ÓëµÚÒ»ÕÅÏàÍ¬
-}
-
-/*
- * ¹¦ÄÜ£º¼ì²é±¾¾ÖÊÇ·ñÒÑ¾­È«²¿Åä¶Ô
- * ÊäÈë£ºstate ÊÇ×´Ì¬Êı×é£¬rows¡¢cols ÊÇ±¾¾ÖĞĞÁĞÊı
- * Êä³ö£ºÖ»¼ì²é±¾¾Ö·¶Î§£¬²»ĞŞ¸ÄÊı×é
- * ·µ»ØÖµ£ºËùÓĞÅÆµÄ×´Ì¬¾ùÎª 2 ·µ»Ø 1£¬·ñÔò·µ»Ø 0
- */
-int isFinished(int state[6][6], int rows, int cols)
-{
-    int i, j;
-
-    // Ö»¼ì²é±¾¾ÖÊ¹ÓÃµÄÇøÓò£¬²»¼ì²éÕû¸ö 6¡Á6 Êı×é
-    for (i = 0; i < rows; i++) {
-        for (j = 0; j < cols; j++) {
-            if (state[i][j] != 2) {
-                return 0;  // »¹ÓĞÅÆÃ»ÓĞÅä¶Ô£¬±¾¾ÖÎ´Íê³É
-            }
-        }
-    }
-    return 1;  // È«²¿¼ì²éÍê£¬Ã¿ÕÅÅÆ¶¼ÒÑ¾­Åä¶Ô
-}
-
-/*
- * ¹¦ÄÜ£º¿ª¾ÖÕ¹Ê¾È«²¿ÅÆ£¬µ¹¼ÆÊ±ºó¸ÇÅÆ
- * ÊäÈë£ºcards ÊÇÅÆÃæÊı×é£¬state ÊÇ×´Ì¬Êı×é£¬rows¡¢cols ÊÇĞĞÁĞÊı£¬seconds ÊÇÕ¹Ê¾ÃëÊı
- * Êä³ö£ºÏÔÊ¾ÅÆÃæºÍµ¹¼ÆÊ±£¬½áÊøºó½«±¾¾Ö state ÉèÎª 0£»²»ĞŞ¸Ä cards
- *       Ê¹ÓÃ ANSI ÇåÆÁ£¬ĞèÒªÖÕ¶ËÖ§³Ö
- * ·µ»ØÖµ£ºÎŞ
- */
-void previewBoard(int cards[6][6], int state[6][6],
-                  int rows, int cols, int seconds)
-{
-    int i, j;
-    int remaining;  // Ê£ÓàÕ¹Ê¾ÃëÊı
-
-    // ¿ª¾Ö½«±¾¾ÖËùÓĞÅÆÉèÎªÁÙÊ±·­¿ª£¬ÅÆÃæ±àºÅ²»±ä
-    for (i = 0; i < rows; i++) {
-        for (j = 0; j < cols; j++) {
-            state[i][j] = 1;
-        }
-    }
-
-    /* ANSI ×ªÒåĞòÁĞ£ºÇå³ıµ±Ç°ÆÁÄ»£¬ÔÙ½«¹â±êÒÆµ½×óÉÏ½Ç
-     * ĞèÒªÖÕ¶ËÖ§³Ö ANSI£¬²»±£Ö¤Çå³ı¹ö¶¯ÀúÊ·
-     */
-    printf("\033[2J\033[H");
-    printf("Çë¼ÇÒäÅÆÃæ£¬%d Ãëºó¸ÇÅÆ¡£\n", seconds);
-    showBoard(cards, state, rows, cols);
-
-    /* Ã¿´ÎÏÔÊ¾Ê£ÓàÊ±¼äºóÔİÍ£Ò»Ãë
-     */
-    for (remaining = seconds; remaining > 0; remaining--) {
-        printf("\r»¹ÓĞ %d Ãë¸ÇÅÆ¡£    ", remaining);
-        Sleep(1000);
-    }
-
-    for (i = 0; i < rows; i++) {
-        for (j = 0; j < cols; j++) {
-            state[i][j] = 0;
-        }
-    }
-    printf("\033[2J\033[H");
-    printf("¼ÇÒäÊ±¼ä½áÊø£¬ËùÓĞÅÆÒÑ¸Ç×¡¡£\n");
-    showBoard(cards, state, rows, cols);
-}
-
-/*
- * ¹¦ÄÜ£ºÔËĞĞÒ»Õû¾ÖÓÎÏ·²¢Í³¼ÆÍ¨¹ØÓÃÊ±
- * ÊäÈë£ºlevel ÎªÄÑ¶È 1¡¢2¡¢3£¬seconds ÊÇ½ÓÊÕÓÃÊ±µÄ±äÁ¿µØÖ·
- * Êä³ö£ºÏÔÊ¾ÓÎÏ·¹ı³Ì£»Í¨¹ØÊ±°Ñ¸ÇÅÆºó¼ÆËãµÄÓÃÊ±Ğ´Èë *seconds£¬µ¥Î»ÎªÕûÃë
- *       Î´Í¨¹Ø²»ĞŞ¸Ä *seconds£¬ÕâÀï²»±£´æÅÅĞĞ°ñ
- * ·µ»ØÖµ£ºÍ¨¹Ø·µ»Ø 1£»ÖĞÍ¾ÍË³ö¡¢ÊäÈë½áÊø»òÄÑ¶ÈÎŞĞ§·µ»Ø 0
- */
-int playGame(int level, int *seconds)
-{
-    int cards[6][6], state[6][6];
-    int rows, cols;
-    int selectedRows[3], selectedCols[3];  // ±¾ÂÖËùÑ¡ÅÆµÄ×ø±ê
-    int row, col, count, i;
-    int groupSize = 2;
-    int showSeconds;
-    time_t startTime, endTime;
-
-    // ÁÁÅÆÊ±³¤Ôİ°´³õ¼¶ 4 Ãë¡¢ÖĞ¼¶ 6 Ãë¡¢¸ß¼¶ 8 ÃëÉèÖÃ
-    if (level == 1) {
-        showSeconds = 4;
-    } else if (level == 2) {
-        showSeconds = 6;
-    } else if (level == 3) {
-        showSeconds = 8;
-        groupSize = 3;
-    } else {
-        printf("ÄÑ¶È±àºÅÎŞĞ§¡£\n");
-        return 0;
-    }
-
-    initBoard(cards, state, level, &rows, &cols);
-    shuffleBoard(cards, rows, cols);
-    previewBoard(cards, state, rows, cols, showSeconds);
-    startTime = time(NULL);  // ¼ÇÒä½×¶Î½áÊøºó²Å¿ªÊ¼¼ÆËãÍ¨¹ØÓÃÊ±
-
-    while (isFinished(state, rows, cols) == 0) {
-        count = 0;  // Ã¿ÂÖÖØĞÂ¼ÇÂ¼×ø±ê£¬²»ĞèÒªÇå¿Õ×ø±êÊı×é
-        while (count < groupSize) {
-            printf("±¾ÂÖĞèÒªÑ¡Ôñ %d ÕÅÅÆ£¬ÕıÔÚÑ¡ÔñµÚ %d ÕÅ¡£\n",
-                   groupSize, count + 1);
-            if (chooseCard(state, rows, cols, &row, &col) == 0) {
-                printf("±¾¾Ö½áÊø£¬Î´²úÉúÍ¨¹Ø³É¼¨¡£\n");
-                return 0;
-            }
-            selectedRows[count] = row;
-            selectedCols[count] = col;
-            state[row][col] = 1;  // Á¢¼´±ê¼Ç·­¿ª£¬×èÖ¹ÖØ¸´Ñ¡Ôñ
-            count++;
-
-            printf("\033[2J\033[H");
-            showBoard(cards, state, rows, cols);
-        }
-
-        if (checkMatch(cards, selectedRows, selectedCols, count) == 1) {
-            for (i = 0; i < count; i++) {
-                state[selectedRows[i]][selectedCols[i]] = 2;
-            }
-            printf("Åä¶Ô³É¹¦£¡\n");
-        } else {
-            printf("ÅÆÃæ²»Í¬£¬1 Ãëºó¸Ç»Ø¡£\n");
-            Sleep(1000);  // Ö»ÔÚ´íÅäÊ±µÈ´ı£¬²»ÏŞÖÆÕû¾Ö²Ù×÷Ê±¼ä
-            for (i = 0; i < count; i++) {
-                state[selectedRows[i]][selectedCols[i]] = 0;
-            }
-            printf("\033[2J\033[H");
-            showBoard(cards, state, rows, cols);
-        }
-    }
-
-    endTime = time(NULL);
-    *seconds = (int)difftime(endTime, startTime);
-    printf("È«²¿Åä¶Ô³É¹¦£¬Í¨¹ØÓÃÊ± %d Ãë¡£\n", *seconds);
     return 1;
+}
+
+/*
+ * åŠŸèƒ½ï¼šåˆ¤æ–­æ‰€æœ‰ç‰Œæ˜¯å¦å·²ç»é…å¯¹
+ * è¾“å…¥ï¼šä½¿ç”¨å†…éƒ¨ stateã€rows å’Œ cols
+ * è¾“å‡ºï¼šä¸ä¿®æ”¹æ£‹ç›˜
+ * è¿”å›å€¼ï¼šå…¨éƒ¨ä¸º 2 è¿”å› 1ï¼Œå¦åˆ™è¿”å› 0
+ */
+static int isFinished(void)
+{
+    int r, c;
+    for (r = 0; r < rows; r++) {
+        for (c = 0; c < cols; c++) {
+            if (state[r][c] != 2) return 0;
+        }
+    }
+    return 1;
+}
+
+/*
+ * åŠŸèƒ½ï¼šè®¡ç®—å¡ç‰ŒçŸ©å½¢ï¼Œä½¿å„éš¾åº¦æ£‹ç›˜æ°´å¹³å±…ä¸­
+ * è¾“å…¥ï¼šrowã€col ä¸ºä» 0 å¼€å§‹çš„æœ‰æ•ˆè¡Œåˆ—ä¸‹æ ‡
+ * è¾“å‡ºï¼šæ— 
+ * è¿”å›å€¼ï¼šè¯¥å¼ ç‰Œçš„å±å¹•åŒºåŸŸ
+ */
+static Rectangle cardBounds(int row, int col)
+{
+    float width = cols * 60.0f + (cols - 1) * 8.0f;
+    return (Rectangle){(800 - width) / 2 + col * 68, 125 + row * 68.0f, 60, 60};
+}
+
+/*
+ * åŠŸèƒ½ï¼šå°†å›¾ç‰‡ç­‰æ¯”ä¾‹ç¼©æ”¾åˆ°å¡ç‰Œå†…éƒ¨
+ * è¾“å…¥ï¼špicture æ˜¯æœ‰æ•ˆçº¹ç†ï¼Œbounds æ˜¯å¡ç‰ŒçŸ©å½¢
+ * è¾“å‡ºï¼šå›¾ç‰‡ç”»é¢ï¼Œä¸æ”¹å˜èµ„æº
+ * è¿”å›å€¼ï¼šæ— 
+ */
+static void drawCardPicture(Texture2D picture, Rectangle bounds)
+{
+    float sx = (bounds.width - 6) / picture.width;
+    float sy = (bounds.height - 6) / picture.height;
+    float scale = sx < sy ? sx : sy;
+    Rectangle dest = {bounds.x + (bounds.width - picture.width * scale) / 2,
+                      bounds.y + (bounds.height - picture.height * scale) / 2,
+                      picture.width * scale, picture.height * scale};
+    DrawTexturePro(picture, (Rectangle){0, 0, (float)picture.width, (float)picture.height},
+                   dest, (Vector2){0, 0}, 0, WHITE);
 }
