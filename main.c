@@ -1,150 +1,230 @@
-// main.c£ºÕËºÅÈë¿Ú¡¢Íæ¼Ò²Ëµ¥ÒÔ¼°Èı¸öÄ£¿éÖ®¼äµÄÁ¬½Ó
 #include <stdio.h>
-#include <stdlib.h>     // srand¡¢exit
-#include <time.h>       // time
-#include "account.h"
-#include "game.h"
+#include <stdlib.h>
+#include <time.h>
+#include "raylib.h"
+#include "ui.h"
 #include "rank.h"
 
-#define LOGIN_EXIT     0
-#define LOGIN_REGISTER 1
-#define LOGIN_SIGNIN   2
+// é¡µé¢ç¼–å·åªç”±ä¸»å‡½æ•°ç®¡ç†ï¼Œå…¶ä»–æ¨¡å—é€šè¿‡è¿”å›å€¼é€šçŸ¥ä¸»å‡½æ•°
+typedef enum {
+    PAGE_MENU,
+    PAGE_LEVEL,
+    PAGE_PENDING,
+    PAGE_RANK
+} Page;
 
-// ¶ÁÈ¡²Ëµ¥Ñ¡ÏîºÍÓÎÏ·ÄÑ¶È
+// ä¸‰è¡Œèœå•ï¼šè´¦å·ã€æ¸¸æˆã€æ’è¡Œæ¦œ
+static const Rectangle loginButton = {180, 180, 200, 48};
+static const Rectangle registerButton = {420, 180, 200, 48};
+static const Rectangle gameButton = {180, 260, 440, 48};
+static const Rectangle rankButton = {180, 340, 440, 48};
+static const Rectangle exitButton = {300, 460, 200, 48};
+static const Rectangle backButton = {300, 460, 200, 48};
 
-static int readInt(const char prompt[], int min, int max);
-static int chooseLevel(void);
-
-// Á÷³Ìº¯Êı£ºÍæ¼Ò²Ëµ¥¡¢ÓÎÏ·
-
-static int playerMenu(User user);
-static void doPlayGame(User user);
+// åŠ è½½å…¬å…±å­—ä½“ï¼Œç¼ºå°‘èµ„æºæ–‡ä»¶æ—¶å°è¯•è¯»å–æœ¬æœºå·²æœ‰çš„é»‘ä½“
+static int loadMainFont(Font *font);
+// åœ¨çª—å£ä¸­å±…ä¸­ç»˜åˆ¶ä¸€è¡Œæ–‡å­—
+static void drawCentered(Font font, const char text[], float y, float size);
+// ç»˜åˆ¶ä¸»èœå•
+static void drawMenu(Font font);
+// ç»˜åˆ¶éš¾åº¦é€‰æ‹©é¡µ
+static void drawLevels(Font font);
 
 /*
- * ¹¦ÄÜ£º×éÖ¯×¢²á¡¢µÇÂ¼ºÍÍæ¼Ò²Ëµ¥µÄÔËĞĞÁ÷³Ì
- * ÊäÈë£ºÎŞ²ÎÊı£¬Í¨¹ı¼üÅÌÑ¡Ôñ²Ëµ¥
- * Êä³ö£ºÏÔÊ¾²Ëµ¥ºÍ²Ù×÷ÌáÊ¾
- * ·µ»ØÖµ£º0 ±íÊ¾Õı³£½áÊø
+ * åŠŸèƒ½ï¼šåˆ›å»ºå›¾å½¢çª—å£ï¼Œå¤„ç†èœå•ã€éš¾åº¦é€‰æ‹©å’Œæ’è¡Œæ¦œé¡µé¢
+ * è¾“å…¥ï¼šæ— å‚æ•°ï¼Œé€šè¿‡é¼ æ ‡é€‰æ‹©é¡µé¢
+ * è¾“å‡ºï¼šå›¾å½¢ä¸»æµç¨‹ï¼›è´¦å·å’Œæ¸¸æˆå°šæœªæ¥å…¥æ—¶æ˜¾ç¤ºæ˜ç¡®æç¤ºï¼Œä¸ç”Ÿæˆæˆç»©
+ * è¿”å›å€¼ï¼š0 æ­£å¸¸é€€å‡ºï¼Œ1 çª—å£æˆ–å­—ä½“åˆå§‹åŒ–å¤±è´¥
  */
 int main(void)
 {
-    User user;
-    int running = 1;  // 1 ¼ÌĞøÔËĞĞ£¬0 ½áÊø³ÌĞò
+    Font font = {0};
+    Page page = PAGE_MENU;
+    int running = 1;
+    int level = 0;
+    const char *pendingTitle = "";
+    const char *pendingMessage = "";
+    Rectangle levelButton;
+    int i;
 
-    srand(time(NULL));//ÉèÖÃÖÖ×Ó
-    printf("\n********** ¼ÇÒäÁ¦´ó¿¼Ñé **********\n");
-    printf("Ê×´ÎÊ¹ÓÃÇëÏÈ×¢²á£¬µÇÂ¼ºó¿ªÊ¼ÓÎÏ·¡£\n");
-    while (running) {
-        printf("\n1. ×¢²áĞÂÓÃ»§\n2. µÇÂ¼\n0. ÍË³ö³ÌĞò\n");
-        switch (readInt("ÇëÑ¡Ôñ£º", 0, 2)) {
-            case LOGIN_REGISTER:
-                doRegister();
-                break;
-            case LOGIN_SIGNIN:
-                if (doLogin(&user) == 1) {
-                    running = playerMenu(user);
+    srand((unsigned int)time(NULL));
+    InitWindow(800, 600, "Memory Challenge - GUI main test");
+    if (!IsWindowReady()) {
+        return 1;
+    }
+    SetTargetFPS(60);
+    SetExitKey(KEY_NULL);
+
+    if (!loadMainFont(&font)) {
+        CloseWindow();
+        return 1;
+    }
+
+    while (running && !WindowShouldClose()) {
+        // æ¯å¸§åªæ›´æ–°ä¸€ä¸ªé¡µé¢ï¼Œåˆ‡æ¢åä¸ä¼šé‡å¤å¤„ç†åŒä¸€æ¬¡ç‚¹å‡»
+        switch (page) {
+            case PAGE_MENU:
+                if (isButtonClicked(loginButton)) {
+                    pendingTitle = "ç™»å½•";
+                    pendingMessage = "Account GUI is not connected yet.";
+                    page = PAGE_PENDING;
+                } else if (isButtonClicked(registerButton)) {
+                    pendingTitle = "æ³¨å†Œ";
+                    pendingMessage = "Registration GUI is not connected yet.";
+                    page = PAGE_PENDING;
+                } else if (isButtonClicked(gameButton)) {
+                    page = PAGE_LEVEL;
+                } else if (isButtonClicked(rankButton)) {
+                    resetRankPage();
+                    page = PAGE_RANK;
+                } else if (isButtonClicked(exitButton)) {
+                    running = 0;
                 }
                 break;
-            case LOGIN_EXIT:
-                running = 0;
+
+            case PAGE_LEVEL:
+                for (i = 0; i < 3; i++) {
+                    levelButton = (Rectangle){250, 180 + i * 80.0f, 300, 48};
+                    if (isButtonClicked(levelButton)) {
+                        level = i + 1;
+                        pendingTitle = "å¼€å§‹æ¸¸æˆ";
+                        pendingMessage = "Game GUI is not connected. No game or score is created.";
+                        page = PAGE_PENDING;
+                        break;
+                    }
+                }
+                if (page == PAGE_LEVEL && isButtonClicked(backButton)) {
+                    page = PAGE_MENU;
+                }
+                break;
+
+            case PAGE_PENDING:
+                if (isButtonClicked(backButton)) {
+                    page = PAGE_MENU;
+                    level = 0;
+                }
+                break;
+
+            case PAGE_RANK:
+                if (updateRankPage() == 1) {
+                    page = PAGE_MENU;
+                }
                 break;
         }
+
+        BeginDrawing();
+        ClearBackground((Color){245, 248, 252, 255});
+        switch (page) {
+            case PAGE_MENU:
+                drawMenu(font);
+                break;
+            case PAGE_LEVEL:
+                drawLevels(font);
+                break;
+            case PAGE_PENDING:
+                drawCentered(font, pendingTitle, 100, 36);
+                drawCentered(font, "å›¾å½¢åŒ–æ¼”ç¤º", 200, 26);
+                drawCentered(font, pendingMessage, 275, 16);
+                if (level != 0) {
+                    drawCentered(font, TextFormat("Selected level: %d", level), 325, 20);
+                }
+                drawButton(backButton, "è¿”å›", font);
+                break;
+            case PAGE_RANK:
+                drawRankPage(font);
+                break;
+        }
+        EndDrawing();
     }
-    printf("¸ĞĞ»Ê¹ÓÃ£¬ÔÙ¼û£¡\n");
+
+    unloadUiResources(font);
+    CloseWindow();
     return 0;
 }
 
 /*
- * ¹¦ÄÜ£º¶ÁÈ¡Ö¸¶¨·¶Î§ÄÚµÄÕûÊı
- * ÊäÈë£ºprompt ÊÇÌáÊ¾ÎÄ×Ö£¬min¡¢max ÊÇÔÊĞíµÄ×îĞ¡ÖµºÍ×î´óÖµ
- * Êä³ö£ºÏÔÊ¾ÌáÊ¾£¬³¬³ö·¶Î§Ê±ÒªÇóÖØĞÂÊäÈë£»Î´¶Áµ½ÕûÊıÊ±ÍË³ö³ÌĞò
- * ·µ»ØÖµ£ºÊäÈëµÄÓĞĞ§ÕûÊı
+ * åŠŸèƒ½ï¼šä¼˜å…ˆä½¿ç”¨å…¬å…± UI å­—ä½“ï¼Œæ²¡æœ‰æ–‡ä»¶æ—¶è¯»å– Windows è‡ªå¸¦å­—ä½“
+ * è¾“å…¥ï¼šfont æ˜¯æ¥æ”¶å­—ä½“çš„åœ°å€ï¼Œè°ƒç”¨å‰å¿…é¡»åˆ›å»ºçª—å£
+ * è¾“å‡ºï¼šæˆåŠŸæ—¶å†™å…¥ *fontï¼Œä¸å¤åˆ¶æˆ–ä¸‹è½½å­—ä½“æ–‡ä»¶
+ * è¿”å›å€¼ï¼š1 æˆåŠŸï¼Œ0 å¤±è´¥
  */
-static int readInt(const char prompt[], int min, int max)
+static int loadMainFont(Font *font)
 {
-    int value;
-    while (1) {
-        printf("%s", prompt);
-        //bug£ºÈç¹ûÊäÈë·ÇÊı×Ö£¬scanf»áÒ»Ö±²»¶ÁÈ¡µ¼ÖÂ»º³åÇøÒ»Ö±´æÔÚ×ÖÄ¸¿¨ËÀ³ÌĞò£¬±ØĞëÍË³ö»òÕßÇå¿Õ»º³åÇø
-        if (scanf("%d", &value) != 1) {
-            printf("ÊäÈë½áÊø»ò¸ñÊ½²»ÕıÈ·£¬³ÌĞòÍË³ö¡£\n");
-            exit(0);
-        }
-        if (value >= min && value <= max) {
-            return value;
-        }
-        printf("ÇëÊäÈë %d µ½ %d Ö®¼äµÄÕûÊı¡£\n", min, max);
+    const char *fontPath = "C:/Windows/Fonts/simhei.ttf";
+    const char *glyphs =
+        "è®°å¿†åŠ›å¤§è€ƒéªŒæ’è¡Œæ¦œåˆçº§ä¸­çº§é«˜çº§è¿”å›åæ¬¡ç”¨æˆ·åç”¨æ—¶ç§’æš‚æ— æˆç»©æ–‡ä»¶è¯»å–å¤±è´¥"
+        "å†™å…¥æµ‹è¯•æˆç»©æŸ¥çœ‹é€€å‡ºå¼€å§‹æ¸¸æˆåˆ†æ•°æ­å–œé€šè¿‡å†æ¥ä¸€å±€ä¸»èœå•ç™»å½•æ³¨å†Œå¯†ç "
+        "ç‚¹å‡»é€‰æ‹©éš¾åº¦å¡ç‰Œé…å¯¹å‡†æˆåŠŸå‰©ä½™æ—¶é—´è¿å‡»é”™è¯¯æç¤ºä¿å­˜è¯»å–åŠ è½½å…³é—­çª—å£"
+        "é‡æ–°è®°å½•åˆ·æ–°è¿›å…¥å‰äº”è‡ªå®šä¹‰æ¨¡å¼å…³å¡ç»§ç»­å–æ¶ˆç¡®å®šæ˜¯å¦ç©å®¶å½“å‰æœ€é«˜æœ€ä½"
+        "æ’åç¬¬æœ¬å±€å¾—åˆ†å·²ä¿å­˜æœªä¿å­˜è¯·è¾“å…¥ä¸å­˜åœ¨å®‰å…¨ç­‰çº§å›¾å½¢åŒ–æ¼”ç¤º"
+        "ï¼ï¼Œã€‚ï¼šï¼ˆï¼‰ã€ï¼Ÿï¼› 0123456789abcdefghijklmnopqrstuvwxyz"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ.:-+/()%#";
+    int count;
+    int *codepoints;
+    Font loaded;
+
+    if (FileExists("assets/fonts/chinese.ttf")) {
+        return loadUiResources(font);
     }
+    if (!FileExists(fontPath)) {
+        TraceLog(LOG_ERROR, "Place a Chinese font at assets/fonts/chinese.ttf");
+        return 0;
+    }
+
+    codepoints = LoadCodepoints(glyphs, &count);
+    if (codepoints == NULL) {
+        return 0;
+    }
+    loaded = LoadFontEx(fontPath, 32, codepoints, count);
+    UnloadCodepoints(codepoints);
+    if (!IsFontValid(loaded) || loaded.texture.id == GetFontDefault().texture.id) {
+        return 0;
+    }
+    SetTextureFilter(loaded.texture, TEXTURE_FILTER_BILINEAR);
+    *font = loaded;
+    return 1;
 }
 
 /*
- * ¹¦ÄÜ£º´¦ÀíµÇÂ¼ºóµÄÓÎÏ·¡¢ÅÅĞĞºÍÍË³öÑ¡Ïî
- * ÊäÈë£ºuser ÊÇµ±Ç°µÇÂ¼µÄÓÃ»§
- * Êä³ö£ºÏÔÊ¾ÓÃ»§ÃûºÍÍæ¼Ò²Ëµ¥£¬°´Ñ¡Ôñµ÷ÓÃÓÎÏ·»òÅÅĞĞ°ñ
- * ·µ»ØÖµ£º1 ±íÊ¾ÇĞ»»ÕËºÅ£¬0 ±íÊ¾ÍË³ö³ÌĞò
+ * åŠŸèƒ½ï¼šå±…ä¸­ç»˜åˆ¶ä¸€è¡Œæ–‡å­—
+ * è¾“å…¥ï¼šfont ä¸ºå­—ä½“ï¼Œtext ä¸ºæ–‡å­—ï¼Œy ä¸ºçºµåæ ‡ï¼Œsize ä¸ºå­—å·
+ * è¾“å‡ºï¼šå±å¹•ä¸­çš„æ–‡å­—ï¼Œä¸ä¿®æ”¹é¡µé¢çŠ¶æ€
+ * è¿”å›å€¼ï¼šæ— 
  */
-static int playerMenu(User user)
+static void drawCentered(Font font, const char text[], float y, float size)
 {
-    while (1) {
-        printf("\n========== µ±Ç°ÓÃ»§£º%s ==========\n", user.name);
-        printf("1. ¿ªÊ¼ÓÎÏ·\n2. ²é¿´ÅÅĞĞ°ñ\n3. ÇĞ»»ÕËºÅ\n0. ÍË³ö³ÌĞò\n");
-        switch (readInt("ÇëÑ¡Ôñ£º", 0, 3)) {
-            case 1:
-                doPlayGame(user);
-                break;
-            case 2:
-                doShowRank();
-                break;
-            case 3:
-                printf("ÒÑÍË³öµ±Ç°ÕËºÅ£¬ÇëÖØĞÂµÇÂ¼¡£\n");
-                return 1;
-            case 0:
-                return 0;
-        }
-    }
+    Vector2 width = MeasureTextEx(font, text, size, 1);
+    DrawTextEx(font, text, (Vector2){(800 - width.x) / 2, y}, size, 1, DARKGRAY);
 }
 
 /*
- * ¹¦ÄÜ£ºÑ¡ÔñÓÎÏ·ÄÑ¶È
- * ÊäÈë£ºÎŞ²ÎÊı£¬Í¨¹ı¼üÅÌÊäÈëÄÑ¶È±àºÅ
- * Êä³ö£ºÏÔÊ¾ÄÑ¶È²Ëµ¥
- * ·µ»ØÖµ£º1¡¢2¡¢3 ·Ö±ğ±íÊ¾³õ¼¶¡¢ÖĞ¼¶¡¢¸ß¼¶£¬0 ±íÊ¾È¡Ïû
+ * åŠŸèƒ½ï¼šç»˜åˆ¶ä¸‰è¡Œä¸»èœå•å’Œé€€å‡ºæŒ‰é’®
+ * è¾“å…¥ï¼šfont ä¸ºä¸­æ–‡å­—ä½“
+ * è¾“å‡ºï¼šä¸»èœå•åŠå½“å‰å¼€å‘çŠ¶æ€æç¤º
+ * è¿”å›å€¼ï¼šæ— 
  */
-static int chooseLevel(void)
+static void drawMenu(Font font)
 {
-    printf("\n---------- Ñ¡ÔñÄÑ¶È ----------\n");
-    printf("1. ³õ¼¶£¨4x4£¬8 ¶ÔÍ¼°¸£©\n");
-    printf("2. ÖĞ¼¶£¨4x5£¬10 ¶ÔÍ¼°¸£©\n");
-    printf("3. ¸ß¼¶£¨6x6£¬12 ×é£¬Ã¿×é 3 ÕÅ£©\n");
-    printf("0. ·µ»ØÍæ¼Ò²Ëµ¥\n");
-    return readInt("ÇëÊäÈëÄÑ¶È±àºÅ£º", 0, 3);
+    drawCentered(font, "è®°å¿†åŠ›å¤§è€ƒéªŒ", 70, 40);
+    drawButton(loginButton, "ç™»å½•", font);
+    drawButton(registerButton, "æ³¨å†Œ", font);
+    drawButton(gameButton, "å¼€å§‹æ¸¸æˆ", font);
+    drawButton(rankButton, "æ’è¡Œæ¦œ", font);
+    drawButton(exitButton, "é€€å‡º", font);
+    drawCentered(font, "GUI preview - account and game integration pending", 550, 16);
 }
 
 /*
- * ¹¦ÄÜ£º¿ªÊ¼Ò»¾ÖÓÎÏ·£¬Í¨¹Øºó±£´æÍæ¼Ò³É¼¨
- * ÊäÈë£ºuser ÊÇµ±Ç°µÇÂ¼µÄÓÃ»§
- * Êä³ö£ºÏÔÊ¾ÓÎÏ·½á¹û¡¢Í¨¹ØÓÃÊ±ºÍ³É¼¨±£´æ½á¹û£»Î´Í¨¹Ø²»±£´æ
- * ·µ»ØÖµ£ºÎŞ
+ * åŠŸèƒ½ï¼šç»˜åˆ¶ä¸‰ä¸ªéš¾åº¦å’Œè¿”å›æŒ‰é’®
+ * è¾“å…¥ï¼šfont ä¸ºä¸­æ–‡å­—ä½“
+ * è¾“å‡ºï¼šéš¾åº¦é€‰æ‹©é¡µé¢ï¼Œä¸å¼€å§‹æ¸¸æˆæˆ–ä¿å­˜æˆç»©
+ * è¿”å›å€¼ï¼šæ— 
  */
-static void doPlayGame(User user)
+static void drawLevels(Font font)
 {
-    int level = chooseLevel();
-    int seconds, result;
-    if (level == 0) {
-        return;
-    }
-    if (playGame(level, &seconds) != 1) {
-        printf("±¾¾ÖÃ»ÓĞÍê³É£¬±¾´Î²»¼Æ³É¼¨¡£\n");
-        return;
-    }
-    printf("\n¹§Ï²Í¨¹Ø£¡±¾¾ÖÓÃÊ± %d Ãë¡£\n", seconds);
-    result = saveScore(user.name, level, seconds); //bug£ºÊ¹ÓÃÁËrankÀïÃæµÄsaveSource£¬²»ÄÜÖ±½ÓÏñÁíÍâµÄdoÒ»Ñù×ª½Ó½ø¶ÔÓ¦Ä£¿éÖĞ
-    if (result == 1) {
-        printf("³É¼¨ÒÑ±£´æµ½ÅÅĞĞ°ñ¡£\n");
-    } else if (result == 0) {
-        printf("±¾´ÎÎ´Ë¢ĞÂ¸öÈË×îºÃ³É¼¨»òÎ´½øÈëÇ°ÎåÃû£¬°ñµ¥Î´±ä»¯¡£\n");
-    } else {
-        printf("³É¼¨ÎÄ¼ş¶ÁĞ´³ö´í£¬±¾´Î³É¼¨Î´ÄÜ±£´æ¡£\n");
-    }
+    drawCentered(font, "é€‰æ‹©éš¾åº¦", 80, 36);
+    drawButton((Rectangle){250, 180, 300, 48}, "åˆçº§ 4x4", font);
+    drawButton((Rectangle){250, 260, 300, 48}, "ä¸­çº§ 4x5", font);
+    drawButton((Rectangle){250, 340, 300, 48}, "é«˜çº§ 6x6", font);
+    drawButton(backButton, "è¿”å›", font);
 }
-
