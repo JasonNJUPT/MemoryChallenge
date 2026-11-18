@@ -128,6 +128,7 @@
   </ItemDefinitionGroup>
   <PropertyGroup>
     <RaylibDir>$(ProjectDir)..\raylib\raylib-6.2_win64_msvc16\</RaylibDir>
+    <LocalDebuggerWorkingDirectory>$(ProjectDir)</LocalDebuggerWorkingDirectory>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Platform)'=='x64'">
     <ClCompile>
@@ -148,7 +149,9 @@
     <ClCompile Include="main.c">
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
-    <ClCompile Include="game.c" />
+    <ClCompile Include="game.c">
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
     <ClInclude Include="game.h" />
     <ClCompile Include="account.c">
       <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
