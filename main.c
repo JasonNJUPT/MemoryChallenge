@@ -45,6 +45,8 @@ static void drawLevels(Font font);
 int main(void)
 {
     Font font = {0};
+    // 直接在高分辨率窗口绘制，保留各模块原来的布局坐标
+    Camera2D camera = {0};
     Page page = PAGE_ENTRY;
     User user = {0};
     int accountResult;
@@ -57,10 +59,12 @@ int main(void)
     int i;
 
     srand((unsigned int)time(NULL));
-    InitWindow(800, 600, "Memory Challenge - GUI main test");
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    InitWindow(2560, 1440, "Memory Challenge");
     if (!IsWindowReady()) {
         return 1;
     }
+    SetWindowMinSize(800, 600);
     SetTargetFPS(60);
     SetExitKey(KEY_NULL);
 
@@ -77,6 +81,10 @@ int main(void)
     }
 
     while (running && !WindowShouldClose()) {
+        camera = getUiCamera();
+        // 先扣除居中留白，再将鼠标坐标换回原来的 800x600 布局
+        SetMouseOffset(-(int)camera.offset.x, -(int)camera.offset.y);
+        SetMouseScale(1.0f / camera.zoom, 1.0f / camera.zoom);
         // 所有玩家页面都要求登录成功
         if (page != PAGE_ENTRY && page != PAGE_ACCOUNT && user.name[0] == '\0') {
             page = PAGE_ENTRY;
@@ -164,6 +172,7 @@ int main(void)
 
         BeginDrawing();
         ClearBackground((Color){245, 248, 252, 255});
+        BeginMode2D(camera);
         switch (page) {
             case PAGE_ENTRY:
                 drawMenu(font, 0);
@@ -193,6 +202,7 @@ int main(void)
                 drawRankPage(font);
                 break;
         }
+        EndMode2D();
         EndDrawing();
     }
 
@@ -236,7 +246,7 @@ static int loadMainFont(Font *font)
     if (codepoints == NULL) {
         return 0;
     }
-    loaded = LoadFontEx(fontPath, 32, codepoints, count);
+    loaded = LoadFontEx(fontPath, 192, codepoints, count);
     UnloadCodepoints(codepoints);
     if (!IsFontValid(loaded) || loaded.texture.id == GetFontDefault().texture.id) {
         return 0;

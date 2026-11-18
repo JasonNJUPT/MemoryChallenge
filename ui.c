@@ -34,7 +34,7 @@
 #include "ui.h"
 
 #define UI_FONT_PATH      "assets/fonts/chinese.ttf"   // 组内提供的字体文件
-#define UI_FONT_SIZE      32       // 字体生成尺寸（像素），画的时候可以缩放
+#define UI_FONT_SIZE      192       // 字体生成尺寸（像素），画的时候可以缩放
 #define UI_CODEPOINT_MAX  512      // 码点数组的容量上限
 
 /*
@@ -387,4 +387,21 @@ void drawButton(Rectangle bounds, const char text[], Font font)
 
     // 中文必须用 DrawTextEx（能用自定义字体），不能用 DrawText（只有 ASCII）
     DrawTextEx(font, text, pos, 20.0f, 1.0f, (Color){ 30, 40, 55, 255 });
+}
+
+/*
+ * 功能：统一计算界面的缩放，保证绘制、鼠标和裁剪使用同一套坐标
+ * 输入：无，读取实际窗口宽高
+ * 输出：无
+ * 返回值：等比例缩放且居中的相机，2560x1440 时放大 2.4 倍
+ */
+Camera2D getUiCamera(void)
+{
+    Camera2D camera = {0};
+    float scaleX = GetScreenWidth() / 800.0f;
+    float scaleY = GetScreenHeight() / 600.0f;
+    camera.zoom = scaleX < scaleY ? scaleX : scaleY;
+    camera.offset.x = (GetScreenWidth() - 800 * camera.zoom) / 2;
+    camera.offset.y = (GetScreenHeight() - 600 * camera.zoom) / 2;
+    return camera;
 }

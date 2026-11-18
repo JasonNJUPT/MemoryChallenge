@@ -867,8 +867,14 @@ static void drawInputBox(Font font, Rectangle box, const char *text,
     {
         visible++;
     }
-    BeginScissorMode((int)textX, (int)box.y + 4,
-                     (int)(box.width - 32.0f), (int)box.height - 8);
+    // 裁剪区域使用窗口像素坐标，不会自动随二维相机缩放
+    {
+        Camera2D camera = getUiCamera();
+        Vector2 clip = GetWorldToScreen2D((Vector2){textX, box.y + 4}, camera);
+        BeginScissorMode((int)clip.x, (int)clip.y,
+                         (int)((box.width - 32) * camera.zoom),
+                         (int)((box.height - 8) * camera.zoom));
+    }
 
     if (text[0] == '\0')  // 空框显示灰色提示词
     {
